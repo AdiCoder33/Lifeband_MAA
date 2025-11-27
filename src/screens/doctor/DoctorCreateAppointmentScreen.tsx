@@ -1,0 +1,194 @@
+import React, { useEffect, useState } from 'react';
+import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View, TextInput } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import ScreenContainer from '../../components/ScreenContainer';
+import Button from '../../components/Button';
+import { colors, spacing, typography, radii } from '../../theme/theme';
+import { auth, firestore } from '../../services/firebase';
+import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { UserProfile } from '../../types/user';
+import { createAppointment } from '../../services/appointmentService';
+import { format } from 'date-fns';
+
+const DoctorCreateAppointmentScreen: React.FC = () => {
+  const uid = auth.currentUser?.uid;
+  const [patients, setPatients] = useState<UserProfile[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<UserProfile | null>(null);
+  const [dateValue, setDateValue] = useState<Date>(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(collection(firestore, 'users', uid, 'patients'), async (snap) => {
+      const profiles: UserProfile[] = [];
+      for (const d of snap.docs) {
+        const patientId = (d.data() as any).patientId;
+        const psnap = await getDoc(doc(firestore, 'users', patientId));
+        if (psnap.exists()) profiles.push(psnap.data() as UserProfile);
+      }
+      setPatients(profiles);
+    });
+    return () => unsub();
+  }, [uid]);
+
+  const handleCreate = async () => {
+    if (!uid || !selectedPatient) {
+      Alert.alert('Select patient', 'Please select a patient.');
+      return;
+    }
+    try {
+      setLoading(true);
+      await createAppointment(uid, selectedPatient.uid, dateValue, reason || undefined);
+      Alert.alert('Created', 'Appointment created.');
+      setReason('');
+      setDateValue(new Date());
+      setSelectedPatient(null);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Could not create appointment.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ScreenContainer scrollable>
+      <Text style={styles.title}>New Appointment</Text>
+      <Text style={styles.label}>Select Patient</Text>
+      <FlatList
+        data={patients}
+        keyExtractor={(item) => item.uid}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.patientRow}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={[
+              styles.patientChip,
+              selectedPatient?.uid === item.uid && styles.patientChipActive,
+            ]}
+            onPress={() => setSelectedPatient(item)}
+          >
+            <Text style={[styles.patientText, selectedPatient?.uid === item.uid && styles.patientTextActive]}>
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={<Text style={styles.meta}>No linked patients yet.</Text>}
+      />
+
+      <Text style={styles.label}>Date & time</Text>
+      <TouchableOpacity
+        style={styles.inputButton}
+        onPress={() => {
+          setPickerMode('date');
+          setShowPicker(true);
+        }}
+      >
+        <Text style={styles.inputText}>{format(dateValue, 'PPP')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.inputButton}
+        onPress={() => {
+          setPickerMode('time');
+          setShowPicker(true);
+        }}
+      >
+        <Text style={styles.inputText}>{format(dateValue, 'HH:mm')}</Text>
+      </TouchableOpacity>
+      {showPicker && (
+        <DateTimePicker
+          value={dateValue}
+          mode={pickerMode}
+          is24Hour
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event: any, selectedDate?: Date) => {
+            if (Platform.OS !== 'ios') setShowPicker(false);
+            if (selectedDate) {
+              setDateValue(selectedDate);
+            }
+          }}
+        />
+      )}
+
+      <Text style={styles.label}>Reason (optional)</Text>
+      <TextInput
+        style={styles.inputBox}
+        value={reason}
+        onChangeText={setReason}
+        placeholder="Consultation"
+      />
+
+      <Button title="Create Appointment" onPress={handleCreate} loading={loading} />
+    </ScreenContainer>
+  );
+};
+
+const styles = StyleSheet.create({
+  title: {
+    fontSize: typography.heading,
+    fontWeight: '800',
+    color: colors.secondary,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  label: {
+    paddingHorizontal: spacing.lg,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  patientRow: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  patientChip: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border || '#E0E0E0',
+  },
+  patientChipActive: {
+    backgroundColor: colors.secondary,
+  },
+  patientText: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  patientTextActive: {
+    color: colors.white,
+  },
+  inputButton: {
+    borderWidth: 1,
+    borderColor: colors.border || '#E0E0E0',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.card,
+  },
+  inputText: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  inputBox: {
+    borderWidth: 1,
+    borderColor: colors.border || '#E0E0E0',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    color: colors.textPrimary,
+  },
+  meta: {
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.lg,
+  },
+});
+
+export default DoctorCreateAppointmentScreen;

@@ -20,10 +20,20 @@ export type AuthStackParamList = {
 
 export type PatientStackParamList = {
   PatientHome: undefined;
+  LifeBand: undefined;
+  VitalsHistory: undefined;
+  LinkDoctor: undefined;
+  PatientAppointments: undefined;
+  PatientAppointmentDetail: { appointmentId: string };
 };
 
 export type DoctorStackParamList = {
   DoctorHome: undefined;
+  DoctorQR: undefined;
+  DoctorPatients: undefined;
+  DoctorAppointments: undefined;
+  DoctorAppointmentDetail: { appointmentId: string };
+  DoctorCreateAppointment: undefined;
 };
 
 export type RootScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<

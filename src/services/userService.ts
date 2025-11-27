@@ -28,17 +28,18 @@ export const createUserProfileFromAuth = async (
   extra?: Partial<UserProfile>,
 ): Promise<UserProfile> => {
   const providerId = user.providerData[0]?.providerId;
+  const googleId = providerId === 'google.com' ? user.providerData[0]?.uid : undefined;
   const profile: UserProfile = {
     uid: user.uid,
     name: extra?.name || user.displayName || '',
     email: user.email || '',
     role,
     authProvider: providerId === 'google.com' ? 'google' : 'password',
-    googleId: providerId === 'google.com' ? user.providerData[0]?.uid : undefined,
     onboardingCompleted: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     ...extra,
+    ...(googleId ? { googleId } : {}),
   };
 
   await setDoc(doc(firestore, usersCollection, user.uid).withConverter(userProfileConverter), profile);

@@ -28,6 +28,13 @@ export interface UserProfile {
   createdAt: FirebaseTimestamp;
   updatedAt: FirebaseTimestamp;
   onboardingCompleted: boolean;
+  doctorId?: string;
+  doctorLinkedAt?: FirebaseTimestamp;
   patientData?: PatientData;
   doctorData?: DoctorData;
+  lifeBandDevice?: {
+    deviceId: string;
+    deviceName?: string;
+    linkedAt: FirebaseTimestamp;
+  };
 }

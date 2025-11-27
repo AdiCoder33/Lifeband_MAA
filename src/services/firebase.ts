@@ -2,10 +2,9 @@ import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
-  initializeAuth,
-  getReactNativePersistence,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
@@ -22,22 +21,15 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
-let authInstance;
-if (Platform.OS === 'web') {
-  authInstance = getAuth(app);
-} else {
-  try {
-    authInstance = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
-  } catch (error) {
-    // If auth was already initialized (e.g., during fast refresh), fall back to the existing instance.
-    authInstance = getAuth(app);
-  }
-}
+const authInstance = getAuth(app);
+
+const firestoreInstance = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
 
 export const auth = authInstance;
-export const firestore = getFirestore(app);
+export const firestore = firestoreInstance;
+export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export default app;

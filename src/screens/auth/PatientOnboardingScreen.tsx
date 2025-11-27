@@ -51,14 +51,16 @@ const PatientOnboardingScreen: React.FC<Props> = ({ navigation, route, profile, 
 
     try {
       setLoading(true);
+      const patientData = {
+        age: Number(age),
+        ...(dateChoice === 'lmp' ? { lmpDate } : {}),
+        ...(dateChoice === 'edd' ? { eddDate } : {}),
+      };
+
       await updateUserProfile(user.uid, {
         name: name.trim(),
         onboardingCompleted: true,
-        patientData: {
-          age: Number(age),
-          lmpDate: dateChoice === 'lmp' ? lmpDate : undefined,
-          eddDate: dateChoice === 'edd' ? eddDate : undefined,
-        },
+        patientData,
       });
 
       const refreshed = await getUserProfile(user.uid);
