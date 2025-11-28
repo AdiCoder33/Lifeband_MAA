@@ -6,6 +6,7 @@ import VitalsHistoryScreen from '../screens/patient/VitalsHistoryScreen';
 import LinkDoctorScreen from '../screens/patient/LinkDoctorScreen';
 import PatientAppointmentsScreen from '../screens/patient/PatientAppointmentsScreen';
 import PatientAppointmentDetailScreen from '../screens/patient/PatientAppointmentDetailScreen';
+import AppointmentsCalendarScreen from '../screens/patient/AppointmentsCalendarScreen';
 import { PatientStackParamList } from '../types/navigation';
 import { UserProfile } from '../types/user';
 
@@ -33,6 +34,7 @@ const PatientStack: React.FC<Props> = ({ profile }) => {
         component={PatientAppointmentDetailScreen}
         options={{ title: 'Appointment' }}
       />
+      <Stack.Screen name="AppointmentsCalendar" component={AppointmentsCalendarScreen} options={{ title: 'Calendar' }} />
     </Stack.Navigator>
   );
 };

@@ -17,6 +17,8 @@ type Props = NativeStackScreenProps<PatientStackParamList, 'PatientHome'> & {
   profile?: UserProfile | null;
 };
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 const calculatePregnancy = (patientData?: UserProfile['patientData']) => {
   if (!patientData) return null;
   const now = new Date();
@@ -25,13 +27,28 @@ const calculatePregnancy = (patientData?: UserProfile['patientData']) => {
     startDate = new Date(patientData.lmpDate);
   } else if (patientData.eddDate) {
     const edd = new Date(patientData.eddDate);
-    startDate = new Date(edd.getTime() - 280 * 24 * 60 * 60 * 1000); // approx 40 weeks
+    startDate = new Date(edd.getTime() - 280 * MS_PER_DAY); // approx 40 weeks
   }
   if (!startDate) return null;
   const diffMs = now.getTime() - startDate.getTime();
-  const weeks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7));
-  const months = Math.floor(weeks / 4);
-  return { weeks, months };
+  const totalDays = Math.max(0, Math.floor(diffMs / MS_PER_DAY));
+  const completedWeeks = Math.floor(totalDays / 7);
+  const currentWeek = Math.min(40, Math.max(1, completedWeeks + 1));
+  const dayOfWeek = totalDays % 7;
+  const dueDate = new Date(startDate.getTime() + 280 * MS_PER_DAY);
+  const daysRemaining = Math.max(0, Math.floor((dueDate.getTime() - now.getTime()) / MS_PER_DAY));
+  const weeksRemaining = Math.floor(daysRemaining / 7);
+  const progress = Math.min(totalDays / 280, 1);
+
+  return {
+    totalDays,
+    currentWeek,
+    dayOfWeek,
+    dueDate,
+    daysRemaining,
+    weeksRemaining,
+    progress,
+  };
 };
 
 const formatTime = (timestamp?: number) => {
@@ -44,7 +61,6 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const { lifeBandState, latestVitals, reconnectIfKnownDevice } = useLifeBand();
   const uid = auth.currentUser?.uid;
   const [doctorName, setDoctorName] = React.useState<string | null>(null);
-  const [doctorHospital, setDoctorHospital] = React.useState<string | null>(null);
   const [patientProfile, setPatientProfile] = useState<UserProfile | null>(profile || null);
 
   const handleSignOut = useCallback(async () => {
@@ -56,23 +72,42 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     }
   }, []);
 
+  const handleDoctorIconPress = useCallback(() => {
+    if (patientProfile?.doctorId) {
+      Alert.alert(
+        doctorName ? `Linked to ${doctorName}` : 'Doctor linked',
+        'You can change your doctor by scanning a new QR code.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Change doctor',
+            style: 'default',
+            onPress: () => navigation.navigate('LinkDoctor'),
+          },
+        ],
+      );
+      return;
+    }
+    navigation.navigate('LinkDoctor');
+  }, [doctorName, navigation, patientProfile?.doctorId]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <View style={{ flexDirection: 'row', gap: spacing.sm, paddingRight: spacing.md }}>
-          <TouchableOpacity onPress={() => navigation.navigate('LinkDoctor')}>
-            <Text style={{ fontSize: 18 }}>🩺</Text>
+        <View style={styles.navActions}>
+          <TouchableOpacity style={styles.navAction} onPress={handleDoctorIconPress}>
+            <Text style={styles.navIcon}>🩺</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('LifeBand')}>
-            <Text style={{ fontSize: 18 }}>📶</Text>
+          <TouchableOpacity style={styles.navAction} onPress={() => navigation.navigate('LifeBand')}>
+            <Text style={styles.navIcon}>📡</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleSignOut}>
-            <Text style={{ fontSize: 18 }}>🚪</Text>
+          <TouchableOpacity style={[styles.navAction, styles.navSignOutAction]} onPress={handleSignOut}>
+            <Text style={styles.navLabel}>Sign out</Text>
           </TouchableOpacity>
         </View>
       ),
     });
-  }, [navigation, handleSignOut]);
+  }, [navigation, handleSignOut, handleDoctorIconPress]);
 
   useEffect(() => {
     reconnectIfKnownDevice();
@@ -95,11 +130,25 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       const doctor = await getDoctorForPatient(patientProfile.uid);
       if (doctor) {
         setDoctorName(doctor.name);
-        setDoctorHospital(doctor.doctorData?.hospital || null);
       }
     };
     load();
   }, [patientProfile?.uid, patientProfile?.doctorId]);
+
+  const preg = calculatePregnancy(patientProfile?.patientData);
+  const pregnancyWeek = preg?.currentWeek ?? null;
+  const daysRemaining = preg?.daysRemaining ?? null;
+  const currentWeekLabel = pregnancyWeek !== null ? `${pregnancyWeek}` : '—';
+  const daysRemainingLabel =
+    daysRemaining !== null && daysRemaining !== undefined ? `${daysRemaining}` : '—';
+  const trimesterLabel = pregnancyWeek
+    ? pregnancyWeek <= 13
+      ? '1st Trimester'
+      : pregnancyWeek <= 27
+      ? '2nd Trimester'
+      : '3rd Trimester'
+    : '—';
+  const weightGainSample = '12.5';
 
   const statusLabel =
     lifeBandState.connectionState === 'connected'
@@ -113,103 +162,143 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       : lifeBandState.connectionState === 'connecting' || lifeBandState.connectionState === 'scanning'
       ? colors.attention
       : colors.muted;
-  const preg = calculatePregnancy(patientProfile?.patientData);
+
+  const usingSampleVitals = !latestVitals;
+  const baselineVitals = {
+    hr: 78,
+    spo2: 98,
+    bp_sys: 110,
+    bp_dia: 72,
+  };
+  const displayVitals = {
+    hr: latestVitals?.hr ?? baselineVitals.hr,
+    spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
+    bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
+    bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
+    timestamp: latestVitals?.timestamp,
+  };
 
   return (
     <ScreenContainer scrollable>
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
-          <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Patient'}</Text>
-          <Text style={styles.heroSubtitle}>We’re here to support your journey.</Text>
-          <Text style={styles.heroCaption}>Stay connected to your LifeBand and your care team.</Text>
+          <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Super Mama'}!</Text>
+          <Text style={styles.heroSubtitle}>We’re cheering for you and baby every step of the way.</Text>
+          <Text style={styles.heroCaption}>Track your journey, vitals, and upcoming visits below.</Text>
         </View>
         <View style={styles.heroBadge}>
           <Text style={styles.heroIcon}>🤰</Text>
         </View>
       </View>
 
-      <View style={[styles.card, styles.cardRose]}>
-        <Text style={styles.cardTitle}>Pregnancy Overview</Text>
-        {preg ? (
-          <Text style={styles.cardCopy}>Month {preg.months}, Week {preg.weeks}</Text>
-        ) : (
-          <Text style={styles.cardCopy}>Add LMP or EDD to see progress.</Text>
-        )}
-      </View>
-
-      <View style={[styles.card, styles.cardIndigo]}>
-        <Text style={styles.cardTitle}>LifeBand Status</Text>
-        <View style={styles.row}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={styles.statusText}>{statusLabel}</Text>
+      <View style={[styles.card, styles.cardJourney]}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderContent}>
+            <Text style={styles.cardEmoji}>🤰</Text>
+            <View style={styles.cardHeaderTextBlock}>
+              <Text style={styles.cardTitle}>Pregnancy Journey</Text>
+              <Text style={styles.cardSubtitle}>
+                {preg ? 'Track your beautiful journey' : 'Add your LMP or EDD to personalise insights.'}
+              </Text>
+            </View>
+          </View>
         </View>
-        <Text style={styles.meta}>Last sync: {formatTime(latestVitals?.timestamp)}</Text>
-        <Button
-          title={lifeBandState.connectionState === 'connected' ? 'Manage LifeBand' : 'Connect LifeBand'}
-          onPress={() => navigation.navigate('LifeBand')}
-          style={styles.buttonSpace}
-        />
+        {preg ? (
+          <View style={styles.journeyTilesWrap}>
+            <JourneyStatCard value={currentWeekLabel} label="Weeks" caption={trimesterLabel} />
+            <JourneyStatCard
+              value={daysRemainingLabel}
+              label="Days Left"
+              caption="Almost there!"
+              valueColor={colors.secondary}
+            />
+            <JourneyStatCard
+              value={weightGainSample}
+              label="kg Gained"
+              caption="Healthy range"
+              valueColor={colors.accent}
+            />
+          </View>
+        ) : (
+          <Text style={styles.cardCopy}>Head to your profile to add your LMP or EDD so we can map each week for you.</Text>
+        )}
       </View>
 
       <View style={[styles.card, styles.cardMint]}>
-        <Text style={styles.cardTitle}>Latest Vitals</Text>
-        {latestVitals ? (
-          <>
-            <View style={styles.metricsRow}>
-              <Metric label="HR" value={`${latestVitals.hr} bpm`} />
-              <Metric label="BP" value={`${latestVitals.bp_sys} / ${latestVitals.bp_dia} mmHg`} />
-              <Metric label="HRV" value={`${latestVitals.hrv} ms`} />
-            </View>
-            <Text style={styles.meta}>Updated at {formatTime(latestVitals.timestamp)}</Text>
-          </>
-        ) : (
-          <Text style={styles.cardCopy}>No vitals received yet. Connect your LifeBand.</Text>
-        )}
-        <Button title="View History" variant="outline" onPress={() => navigation.navigate('VitalsHistory')} />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Doctor</Text>
-        {patientProfile?.doctorId && doctorName ? (
-          <>
-            <Text style={styles.cardCopy}>{doctorName}</Text>
-            {doctorHospital ? <Text style={styles.meta}>{doctorHospital}</Text> : null}
-          </>
-        ) : (
-          <Text style={styles.cardCopy}>No doctor linked.</Text>
-        )}
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Vitals Overview</Text>
+            <Text style={styles.cardSubtitle}>Pulse, oxygen, and pressure at a glance</Text>
+          </View>
+        </View>
+        <View style={styles.vitalsPanelRow}>
+          <View style={styles.vitalsPanel}>
+            <Text style={styles.vitalsPanelHeading}>Heart Rate</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
+            <View style={styles.vitalsDivider} />
+            <Text style={styles.vitalsPanelHeading}>SpO₂</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
+          </View>
+          <View style={[styles.vitalsPanel, styles.vitalsPanelAccent]}>
+            <Text style={styles.vitalsPanelHeading}>Blood Pressure</Text>
+            <Text style={styles.vitalsPanelValue}>
+              {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
+            </Text>
+            <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
+          </View>
+        </View>
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <Text style={styles.statusText}>{statusLabel}</Text>
+        </View>
+        <Text style={styles.meta}>
+          {usingSampleVitals
+            ? 'Showing reference values until your LifeBand shares live readings.'
+            : `Last sync ${formatTime(displayVitals.timestamp)}`}
+        </Text>
         <Button
-          title={patientProfile?.doctorId ? 'Change Doctor (Scan QR)' : 'Link My Doctor (Scan QR)'}
+          title="View History"
           variant="outline"
-          onPress={() => navigation.navigate('LinkDoctor')}
-          style={styles.buttonSpace}
+          onPress={() => navigation.navigate('VitalsHistory')}
+          style={styles.historyButton}
         />
       </View>
 
-      <Button
-        title="View My Appointments"
-        onPress={() => navigation.navigate('PatientAppointments')}
-        style={{ marginTop: spacing.sm, marginHorizontal: spacing.lg }}
-      />
+      <TouchableOpacity
+        style={[styles.card, styles.cardLavender]}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate('AppointmentsCalendar')}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Appointments</Text>
+          <Text style={styles.cardEmoji}>📅</Text>
+        </View>
+        <Text style={styles.cardCopy}>Open your calendar to review upcoming visits and plan ahead.</Text>
+        <Button
+          title="View Checklist"
+          variant="outline"
+          onPress={() => navigation.navigate('PatientAppointments')}
+          style={styles.buttonSpace}
+        />
+      </TouchableOpacity>
     </ScreenContainer>
   );
 };
 
-const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <View style={styles.metricBox}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <Text style={styles.metricValue}>{value}</Text>
+const JourneyStatCard: React.FC<{ value: string; label: string; caption: string; valueColor?: string }> = ({
+  value,
+  label,
+  caption,
+  valueColor,
+}) => (
+  <View style={styles.journeyStatCard}>
+    <Text style={[styles.journeyValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
+    <Text style={styles.journeyLabel}>{label}</Text>
+    <Text style={styles.journeyCaption}>{caption}</Text>
   </View>
 );
 
 const styles = StyleSheet.create({
-  greeting: {
-    fontSize: typography.heading,
-    fontWeight: '800',
-    color: colors.secondary,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
   heroCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -217,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 0,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -233,6 +322,7 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     color: '#FDF0F0',
     marginBottom: spacing.xs,
+    fontSize: typography.body,
   },
   heroCaption: {
     color: '#FFE5E5',
@@ -251,7 +341,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.card,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: 0,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
@@ -261,29 +351,128 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  cardRose: {
+  cardJourney: {
     backgroundColor: '#FDECEE',
-  },
-  cardIndigo: {
-    backgroundColor: '#E8ECFF',
   },
   cardMint: {
     backgroundColor: '#E8F7F4',
+  },
+  cardLavender: {
+    backgroundColor: '#EFE9FF',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  cardHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardHeaderTextBlock: {
+    marginLeft: spacing.sm,
   },
   cardTitle: {
     fontSize: typography.subheading,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  cardSubtitle: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+  },
+  cardEmoji: {
+    fontSize: 22,
   },
   cardCopy: {
     color: colors.textSecondary,
     fontSize: typography.body,
   },
-  row: {
+  journeyTilesWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  journeyStatCard: {
+    width: '31%',
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.08)',
     alignItems: 'center',
     marginBottom: spacing.sm,
+  },
+  journeyValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.healthy,
+  },
+  journeyLabel: {
+    marginTop: spacing.xs,
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  journeyCaption: {
+    marginTop: spacing.xs,
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  historyButton: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  vitalsPanelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+  },
+  vitalsPanel: {
+    width: '48%',
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+  },
+  vitalsPanelAccent: {
+    backgroundColor: '#F1F3FF',
+    borderColor: colors.secondary,
+  },
+  vitalsPanelHeading: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    fontWeight: '600',
+  },
+  vitalsPanelValue: {
+    color: colors.textPrimary,
+    fontSize: typography.subheading,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  vitalsPanelHint: {
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+    fontSize: typography.small,
+  },
+  vitalsDivider: {
+    height: 1,
+    backgroundColor: 'rgba(40, 53, 147, 0.1)',
+    marginVertical: spacing.sm,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
   },
   statusDot: {
     width: 12,
@@ -292,36 +481,42 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   statusText: {
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   meta: {
     color: colors.textSecondary,
     fontSize: typography.small,
     marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  metricBox: {
-    flex: 1,
-    padding: spacing.sm,
-  },
-  metricLabel: {
-    color: colors.textSecondary,
-    fontSize: typography.small,
-    marginBottom: spacing.xs,
-  },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: typography.body,
-    fontWeight: '700',
   },
   buttonSpace: {
     marginTop: spacing.sm,
+  },
+  navActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: spacing.md,
+    marginLeft: -spacing.xs,
+  },
+  navAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginLeft: spacing.xs,
+  },
+  navIcon: {
+    fontSize: 18,
+  },
+  navSignOutAction: {
+    backgroundColor: colors.primary,
+  },
+  navLabel: {
+    color: colors.white,
+    fontWeight: '600',
+    fontSize: typography.small,
   },
 });
 

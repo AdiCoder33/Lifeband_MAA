@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
+import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList, Linking } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -20,14 +20,34 @@ type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorHome'> & {
   profile?: UserProfile | null;
 };
 
+type PatientSummaryEntry = {
+  profile: UserProfile;
+  vitals: VitalsSample | null;
+};
+
+type RiskEntry = {
+  profile: UserProfile;
+  issues: string[];
+  score: number;
+  lastReading: number;
+};
+
+type ActiveEntry = {
+  profile: UserProfile;
+  lastReading: number;
+};
+
+const toMillis = (timestamp?: number) => {
+  if (!timestamp) return 0;
+  return timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
+};
+
 const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const uid = auth.currentUser?.uid;
   const [patientCount, setPatientCount] = useState(0);
   const [upcoming, setUpcoming] = useState<Appointment[]>([]);
   const [nextAppointments, setNextAppointments] = useState<Appointment[]>([]);
-  const [patientSummaries, setPatientSummaries] = useState<
-    { profile: UserProfile; vitals: VitalsSample | null }[]
-  >([]);
+  const [patientSummaries, setPatientSummaries] = useState<PatientSummaryEntry[]>([]);
   const patientUnsubs = useRef<Record<string, () => void>>({});
 
   const patientPages = useMemo(() => {
@@ -39,6 +59,56 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     return pages;
   }, [patientSummaries]);
 
+  const riskPatients = useMemo<RiskEntry[]>(() => {
+    return patientSummaries
+      .map((entry) => {
+        if (!entry.vitals) return null;
+        const { bp_sys, bp_dia, spo2, hr, timestamp } = entry.vitals;
+        const issues: string[] = [];
+        let score = 0;
+        if (bp_sys >= 140 || bp_dia >= 90) {
+          issues.push(`BP ${bp_sys}/${bp_dia}`);
+          score += 2;
+        }
+        if (typeof spo2 === 'number' && spo2 < 95) {
+          issues.push(`SpO₂ ${spo2}%`);
+          score += 3;
+        }
+        if (hr >= 110) {
+          issues.push(`HR ${hr} bpm`);
+          score += 1;
+        }
+        if (!issues.length) return null;
+        return {
+          profile: entry.profile,
+          issues,
+          score,
+          lastReading: toMillis(timestamp),
+        } as RiskEntry;
+      })
+      .filter((entry): entry is RiskEntry => entry !== null)
+      .sort((a, b) => (b.score - a.score) || (b.lastReading - a.lastReading))
+      .slice(0, 3);
+  }, [patientSummaries]);
+
+  const activePatients = useMemo<ActiveEntry[]>(() => {
+    if (!patientSummaries.length) return [];
+    const ranked = patientSummaries
+      .map((entry) => ({
+        profile: entry.profile,
+        lastReading: entry.vitals ? toMillis(entry.vitals.timestamp) : 0,
+      }))
+      .sort((a, b) => b.lastReading - a.lastReading);
+
+    const recent = ranked.filter((item) => item.lastReading > 0).slice(0, 3);
+    if (recent.length >= 3) {
+      return recent;
+    }
+    const remainderNeeded = 3 - recent.length;
+    const fallback = ranked.filter((item) => item.lastReading === 0).slice(0, remainderNeeded);
+    return [...recent, ...fallback];
+  }, [patientSummaries]);
+
   const handleSignOut = useCallback(async () => {
     try {
       await signOutUser();
@@ -48,15 +118,41 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     }
   }, []);
 
+  const handleReviewPatient = useCallback(() => {
+    navigation.navigate('DoctorPatients');
+  }, [navigation]);
+
+  const handleMessagePatient = useCallback((patient: UserProfile) => {
+    if (!patient.email) {
+      Alert.alert('Missing email', `Add an email address for ${patient.name} to send a message.`);
+      return;
+    }
+    Linking.openURL(`mailto:${encodeURIComponent(patient.email)}`).catch(() =>
+      Alert.alert('Unable to compose email', 'Please try again from your mail app.'),
+    );
+  }, []);
+
+  const handleCallPatient = useCallback((patient: UserProfile) => {
+    const phone = (patient as any)?.phoneNumber || (patient as any)?.phone;
+    if (!phone) {
+      Alert.alert('Missing number', `Add a phone number for ${patient.name} to place a call.`);
+      return;
+    }
+    Linking.openURL(`tel:${phone}`).catch(() =>
+      Alert.alert('Unable to start call', 'Please try again from your dialer.'),
+    );
+  }, []);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => navigation.navigate('DoctorQR')} style={styles.linkIcon}>
-            <Text style={styles.linkIconText}>🔗</Text>
+          <TouchableOpacity style={styles.headerActionButton} onPress={() => navigation.navigate('DoctorQR')}>
+            <Text style={styles.headerActionIcon}>🔗</Text>
+            <Text style={styles.headerActionLabel}>Share QR</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleSignOut} style={styles.linkIcon}>
-            <Text style={styles.linkIconText}>🚪</Text>
+          <TouchableOpacity style={[styles.headerActionButton, styles.headerSignOut]} onPress={handleSignOut}>
+            <Text style={styles.headerActionLabelAlt}>Sign out</Text>
           </TouchableOpacity>
         </View>
       ),
@@ -91,7 +187,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       Object.values(patientUnsubs.current).forEach((u) => u && u());
       patientUnsubs.current = {};
 
-      const summaries: { profile: UserProfile; vitals: VitalsSample | null }[] = [];
+      const summaries: PatientSummaryEntry[] = [];
       for (const d of snap.docs) {
         const patientId = (d.data() as any).patientId;
         const psnap = await getDoc(doc(firestore, 'users', patientId));
@@ -129,6 +225,68 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.heroIcon}>🩺</Text>
         </View>
       </View>
+
+        {riskPatients.length > 0 && (
+          <View style={[styles.cardFull, styles.alertCard]}>
+            <View style={styles.alertHeader}>
+              <Text style={styles.cardTitle}>Critical Alerts</Text>
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>{riskPatients.length}</Text>
+              </View>
+            </View>
+            {riskPatients.map((entry, index) => (
+              <View
+                key={entry.profile.uid}
+                style={[styles.alertRow, index === riskPatients.length - 1 && styles.rowLast]}
+              >
+                <View style={styles.alertInfo}>
+                  <Text style={styles.alertName}>{entry.profile.name}</Text>
+                  <Text style={styles.alertMeta}>{entry.issues.join(' · ')}</Text>
+                </View>
+                <TouchableOpacity style={styles.alertAction} onPress={handleReviewPatient}>
+                  <Text style={styles.alertActionText}>Review</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <Text style={styles.alertFooter}>Flagged when vitals cross safe thresholds so you can prioritise outreach.</Text>
+          </View>
+        )}
+
+        {activePatients.length > 0 && (
+          <View style={[styles.cardFull, styles.contactCard]}>
+            <Text style={styles.cardTitle}>Quick Connect</Text>
+            <Text style={styles.cardCopy}>Reach out to the patients with the freshest readings.</Text>
+            {activePatients.map((entry, index) => (
+              <View
+                key={entry.profile.uid}
+                style={[styles.contactRow, index === activePatients.length - 1 && styles.rowLast]}
+              >
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactName}>{entry.profile.name}</Text>
+                  <Text style={styles.contactMeta}>
+                    {entry.lastReading
+                      ? `Last reading ${format(new Date(entry.lastReading), 'MMM d, HH:mm')}`
+                      : 'Awaiting first reading'}
+                  </Text>
+                </View>
+                <View style={styles.contactActions}>
+                  <TouchableOpacity
+                    style={styles.contactButton}
+                    onPress={() => handleMessagePatient(entry.profile)}
+                  >
+                    <Text style={styles.contactButtonIcon}>✉️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.contactButton, styles.contactButtonAccent]}
+                    onPress={() => handleCallPatient(entry.profile)}
+                  >
+                    <Text style={styles.contactButtonIcon}>📞</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
       <View style={styles.cardRow}>
         <TouchableOpacity style={[styles.statCard, styles.card]} onPress={() => navigation.navigate('DoctorPatients')}>
@@ -192,7 +350,9 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                     </Text>
                     <Text style={styles.cellValue}>{p.vitals ? p.vitals.hr : '—'}</Text>
                     <Text style={styles.cellValue}>{p.vitals ? p.vitals.hrv : '—'}</Text>
-                    <Text style={styles.cellValue}>—</Text>
+                    <Text style={styles.cellValue}>
+                      {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -220,7 +380,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 0,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -252,15 +412,148 @@ const styles = StyleSheet.create({
   heroIcon: {
     fontSize: 28,
   },
-  linkIcon: {
-    paddingHorizontal: spacing.md,
-  },
-  linkIconText: {
-    fontSize: 20,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingRight: spacing.md,
+  },
+  headerActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    marginLeft: spacing.xs,
+  },
+  headerSignOut: {
+    backgroundColor: colors.primary,
+  },
+  headerActionIcon: {
+    fontSize: 16,
+    marginRight: spacing.xs,
+  },
+  headerActionLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  headerActionLabelAlt: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.white,
+  },
+  alertCard: {
+    backgroundColor: '#FFF4F3',
+    borderWidth: 1,
+    borderColor: 'rgba(211, 47, 47, 0.12)',
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  alertBadge: {
+    minWidth: 28,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 4,
+    borderRadius: radii.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertBadgeText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: typography.small,
+  },
+  alertRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(211, 47, 47, 0.12)',
+  },
+  alertInfo: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  alertName: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  alertMeta: {
+    color: colors.critical,
+    fontSize: typography.small,
+    marginTop: 2,
+  },
+  alertAction: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.critical,
+  },
+  alertActionText: {
+    color: colors.critical,
+    fontWeight: '700',
+    fontSize: typography.small,
+  },
+  alertFooter: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    marginTop: spacing.sm,
+  },
+  contactCard: {
+    backgroundColor: '#EEF0FF',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(40, 53, 147, 0.12)',
+  },
+  contactInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  contactName: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  contactMeta: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    marginTop: 2,
+  },
+  contactActions: {
+    flexDirection: 'row',
+  },
+  contactButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.xs,
+  },
+  contactButtonAccent: {
+    borderColor: colors.primary,
+  },
+  contactButtonIcon: {
+    fontSize: 16,
+  },
+  rowLast: {
+    borderBottomWidth: 0,
   },
   subtitle: {
     color: colors.textSecondary,
@@ -270,7 +563,7 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
     marginBottom: spacing.md,
   },
   card: {
@@ -302,7 +595,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     padding: spacing.md,
     borderRadius: radii.lg,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 0,
     marginBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -321,7 +614,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   tablePage: {
-    width: 320,
+    width: 340,
     paddingHorizontal: spacing.sm,
   },
   apptRow: {
@@ -351,12 +644,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: colors.border || '#E0E0E0',
+    backgroundColor: '#F3F4FF',
+    borderTopLeftRadius: radii.md,
+    borderTopRightRadius: radii.md,
   },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: colors.border || '#E0E0E0',
+    backgroundColor: colors.white,
   },
   headerCell: {
     flex: 1,
