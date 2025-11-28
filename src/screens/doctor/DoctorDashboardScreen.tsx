@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -13,6 +13,7 @@ import { UserProfile } from '../../types/user';
 import { format } from 'date-fns';
 import { subscribeToLatestVitals } from '../../services/vitalsService';
 import { VitalsSample } from '../../types/vitals';
+import { shadows } from '../../theme/theme';
 
 type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorHome'> & {
   profile?: UserProfile | null;
@@ -27,6 +28,15 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     { profile: UserProfile; vitals: VitalsSample | null }[]
   >([]);
   const patientUnsubs = useRef<Record<string, () => void>>({});
+
+  const patientPages = useMemo(() => {
+    const chunkSize = 10;
+    const pages: typeof patientSummaries[] = [];
+    for (let i = 0; i < patientSummaries.length; i += chunkSize) {
+      pages.push(patientSummaries.slice(i, i + chunkSize));
+    }
+    return pages;
+  }, [patientSummaries]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -94,15 +104,23 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   return (
     <ScreenContainer scrollable>
-      <Text style={styles.title}>Hello, Dr. {profile?.name || 'Doctor'}</Text>
-      <Text style={styles.subtitle}>{profile?.doctorData?.hospital || 'Your clinic'}</Text>
+      <View style={styles.heroCard}>
+        <View style={styles.heroTextBlock}>
+          <Text style={styles.heroTitle}>Hello, Dr. {profile?.name || 'Doctor'}</Text>
+          <Text style={styles.heroSubtitle}>{profile?.doctorData?.hospital || 'Your clinic'}</Text>
+          <Text style={styles.heroCaption}>Keep your patients close and visits organized.</Text>
+        </View>
+        <View style={styles.heroBadge}>
+          <Text style={styles.heroIcon}>🩺</Text>
+        </View>
+      </View>
 
       <View style={styles.cardRow}>
-        <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('DoctorPatients')}>
+        <TouchableOpacity style={[styles.statCard, styles.card]} onPress={() => navigation.navigate('DoctorPatients')}>
           <Text style={styles.cardLabel}>Patients</Text>
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
-        <View style={styles.card}>
+        <View style={[styles.statCardAlt, styles.card]}>
           <Text style={styles.cardLabel}>Upcoming</Text>
           <Text style={styles.cardValue}>{upcoming.length}</Text>
         </View>
@@ -133,29 +151,39 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         {patientSummaries.length === 0 ? (
           <Text style={styles.cardCopy}>No linked patients yet.</Text>
         ) : (
-          patientSummaries.map((p) => (
-            <View key={p.profile.uid} style={styles.patientRow}>
-              <View>
-                <Text style={styles.patientName}>{p.profile.name}</Text>
-                <Text style={styles.patientMeta}>{p.profile.email}</Text>
-              </View>
-              <View style={styles.patientVitals}>
-                {p.vitals ? (
-                  <>
-                    <Text style={styles.patientMeta}>HR {p.vitals.hr}</Text>
-                    <Text style={styles.patientMeta}>
-                      BP {p.vitals.bp_sys}/{p.vitals.bp_dia}
+          <FlatList
+            data={patientPages}
+            keyExtractor={(_, idx) => `page-${idx}`}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item: page }) => (
+              <View style={styles.tablePage}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.headerCell, styles.cellName]}>Patient</Text>
+                  <Text style={styles.headerCell}>BP</Text>
+                  <Text style={styles.headerCell}>HR</Text>
+                  <Text style={styles.headerCell}>HRV</Text>
+                  <Text style={styles.headerCell}>SpO₂</Text>
+                </View>
+                {page.map((p) => (
+                  <View key={p.profile.uid} style={styles.tableRow}>
+                    <View style={styles.cellName}>
+                      <Text style={styles.patientName}>{p.profile.name}</Text>
+                      <Text style={styles.patientMeta}>{p.profile.email}</Text>
+                    </View>
+                    <Text style={styles.cellValue}>
+                      {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
                     </Text>
-                    <Text style={styles.patientMeta}>HRV {p.vitals.hrv}</Text>
-                  </>
-                ) : (
-                  <Text style={styles.patientMeta}>No vitals</Text>
-                )}
+                    <Text style={styles.cellValue}>{p.vitals ? p.vitals.hr : '—'}</Text>
+                    <Text style={styles.cellValue}>{p.vitals ? p.vitals.hrv : '—'}</Text>
+                    <Text style={styles.cellValue}>—</Text>
+                  </View>
+                ))}
               </View>
-            </View>
-          ))
+            )}
+          />
         )}
-        <Button title="View All Patients" variant="outline" onPress={() => navigation.navigate('DoctorPatients')} />
       </View>
 
     </ScreenContainer>
@@ -167,8 +195,47 @@ const styles = StyleSheet.create({
     fontSize: typography.heading,
     fontWeight: '800',
     color: colors.secondary,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.xs,
+  },
+  heroCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.secondary,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  heroTextBlock: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  heroTitle: {
+    fontSize: typography.heading,
+    fontWeight: '800',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  heroSubtitle: {
+    color: '#E0E4FF',
+    marginBottom: spacing.xs,
+  },
+  heroCaption: {
+    color: '#CBD0FF',
+    fontSize: typography.small,
+  },
+  heroBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroIcon: {
+    fontSize: 28,
   },
   linkIcon: {
     paddingHorizontal: spacing.md,
@@ -178,20 +245,31 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: colors.textSecondary,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
   },
   cardRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   card: {
     flex: 1,
     backgroundColor: colors.card,
-    padding: spacing.lg,
+    padding: spacing.md,
     borderRadius: radii.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  statCard: {
+    backgroundColor: '#EDF0FF',
+  },
+  statCardAlt: {
+    backgroundColor: '#FCE7E7',
   },
   cardLabel: {
     color: colors.textSecondary,
@@ -203,10 +281,15 @@ const styles = StyleSheet.create({
   },
   cardFull: {
     backgroundColor: colors.card,
-    padding: spacing.lg,
+    padding: spacing.md,
     borderRadius: radii.lg,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   cardTitle: {
     fontSize: typography.subheading,
@@ -217,6 +300,10 @@ const styles = StyleSheet.create({
   cardCopy: {
     color: colors.textSecondary,
     marginBottom: spacing.sm,
+  },
+  tablePage: {
+    width: 320,
+    paddingHorizontal: spacing.sm,
   },
   apptRow: {
     flexDirection: 'row',
@@ -239,6 +326,30 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: colors.border || '#E0E0E0',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border || '#E0E0E0',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border || '#E0E0E0',
+  },
+  headerCell: {
+    flex: 1,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  cellName: {
+    flex: 2,
+  },
+  cellValue: {
+    flex: 1,
+    color: colors.textPrimary,
   },
   patientName: {
     fontWeight: '700',

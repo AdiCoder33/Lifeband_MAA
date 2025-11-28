@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -46,6 +46,21 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const [doctorHospital, setDoctorHospital] = React.useState<string | null>(null);
   const [patientProfile, setPatientProfile] = useState<UserProfile | null>(profile || null);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', gap: spacing.sm, paddingRight: spacing.md }}>
+          <TouchableOpacity onPress={() => navigation.navigate('LinkDoctor')}>
+            <Text style={{ fontSize: 18 }}>🩺</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('LifeBand')}>
+            <Text style={{ fontSize: 18 }}>📶</Text>
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation]);
+
   useEffect(() => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
@@ -89,8 +104,18 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   return (
     <ScreenContainer scrollable>
-      <Text style={styles.greeting}>Hello, {patientProfile?.name || 'Patient'}</Text>
-      <View style={styles.card}>
+      <View style={styles.heroCard}>
+        <View style={styles.heroTextBlock}>
+          <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Patient'}</Text>
+          <Text style={styles.heroSubtitle}>We’re here to support your journey.</Text>
+          <Text style={styles.heroCaption}>Stay connected to your LifeBand and your care team.</Text>
+        </View>
+        <View style={styles.heroBadge}>
+          <Text style={styles.heroIcon}>🤰</Text>
+        </View>
+      </View>
+
+      <View style={[styles.card, styles.cardRose]}>
         <Text style={styles.cardTitle}>Pregnancy Overview</Text>
         {preg ? (
           <Text style={styles.cardCopy}>Month {preg.months}, Week {preg.weeks}</Text>
@@ -99,7 +124,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         )}
       </View>
 
-      <View style={styles.card}>
+      <View style={[styles.card, styles.cardIndigo]}>
         <Text style={styles.cardTitle}>LifeBand Status</Text>
         <View style={styles.row}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -113,7 +138,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         />
       </View>
 
-      <View style={styles.card}>
+      <View style={[styles.card, styles.cardMint]}>
         <Text style={styles.cardTitle}>Latest Vitals</Text>
         {latestVitals ? (
           <>
@@ -172,12 +197,65 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,
   },
+  heroCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  heroTextBlock: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  heroTitle: {
+    fontSize: typography.heading,
+    fontWeight: '800',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  heroSubtitle: {
+    color: '#FDF0F0',
+    marginBottom: spacing.xs,
+  },
+  heroCaption: {
+    color: '#FFE5E5',
+    fontSize: typography.small,
+  },
+  heroBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroIcon: {
+    fontSize: 28,
+  },
   card: {
     backgroundColor: colors.card,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  cardRose: {
+    backgroundColor: '#FDECEE',
+  },
+  cardIndigo: {
+    backgroundColor: '#E8ECFF',
+  },
+  cardMint: {
+    backgroundColor: '#E8F7F4',
   },
   cardTitle: {
     fontSize: typography.subheading,
