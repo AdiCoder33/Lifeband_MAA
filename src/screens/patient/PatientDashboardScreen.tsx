@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { getDoctorForPatient } from '../../services/doctorPatientService';
 import { auth, firestore } from '../../services/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { signOutUser } from '../../services/authService';
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientHome'> & {
   profile?: UserProfile | null;
@@ -46,6 +47,15 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const [doctorHospital, setDoctorHospital] = React.useState<string | null>(null);
   const [patientProfile, setPatientProfile] = useState<UserProfile | null>(profile || null);
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOutUser();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Sign out failed', message);
+    }
+  }, []);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -56,10 +66,13 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <TouchableOpacity onPress={() => navigation.navigate('LifeBand')}>
             <Text style={{ fontSize: 18 }}>📶</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={handleSignOut}>
+            <Text style={{ fontSize: 18 }}>🚪</Text>
+          </TouchableOpacity>
         </View>
       ),
     });
-  }, [navigation]);
+  }, [navigation, handleSignOut]);
 
   useEffect(() => {
     reconnectIfKnownDevice();
