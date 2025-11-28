@@ -2,6 +2,7 @@ import { BleManager, Device, Subscription } from 'react-native-ble-plx';
 import base64 from 'react-native-base64';
 import { Platform, PermissionsAndroid } from 'react-native';
 import { VitalsSample } from '../types/vitals';
+import { Buffer } from 'buffer';
 
 export type BleConnectionState = 'disconnected' | 'scanning' | 'connecting' | 'connected';
 
@@ -20,6 +21,7 @@ export interface LifeBandState {
 export const LIFEBAND_SERVICE_UUID = 'c0de0001-73f3-4b4c-8f61-1aa7a6d5beef';
 export const LIFEBAND_VITALS_CHAR_UUID = 'c0de0002-73f3-4b4c-8f61-1aa7a6d5beef'; // Notify
 export const LIFEBAND_CONFIG_CHAR_UUID = 'c0de0003-73f3-4b4c-8f61-1aa7a6d5beef'; // Write (START/STOP)
+export const LIFEBAND_DEVICE_NAME = 'LIFEBAND-MAA-ESP32';
 
 let manager: BleManager | null = null;
 let notificationSub: Subscription | null = null;
@@ -197,3 +199,70 @@ export const reconnectLifeBandById = async (
     currentDevice = null;
   }
 };
+
+type LifeBandSample = VitalsSample;
+
+export async function connectToNearestLifeBand(
+  manager: BleManager,
+  onVitals: (sample: LifeBandSample) => void,
+): Promise<{ device: Device; stop: () => void }> {
+  await manager.enable();
+
+  return new Promise((resolve, reject) => {
+    const stateSub = manager.onStateChange((state) => {
+      if (state !== 'PoweredOn') {
+        return;
+      }
+      stateSub.remove();
+      manager.startDeviceScan([LIFEBAND_SERVICE_UUID], null, async (error, scannedDevice) => {
+        if (error) {
+          manager.stopDeviceScan();
+          reject(error);
+          return;
+        }
+        if (!scannedDevice || scannedDevice.name !== LIFEBAND_DEVICE_NAME) {
+          return;
+        }
+        manager.stopDeviceScan();
+        try {
+          const device = await scannedDevice.connect();
+          await device.discoverAllServicesAndCharacteristics();
+
+          const startPayload = Buffer.from('START', 'utf8').toString('base64');
+          await device.writeCharacteristicWithResponseForService(
+            LIFEBAND_SERVICE_UUID,
+            LIFEBAND_CONFIG_CHAR_UUID,
+            startPayload,
+          );
+
+          const monitorSub = device.monitorCharacteristicForService(
+            LIFEBAND_SERVICE_UUID,
+            LIFEBAND_VITALS_CHAR_UUID,
+            (monitorError, characteristic) => {
+              if (monitorError || !characteristic?.value) {
+                return;
+              }
+              try {
+                const json = Buffer.from(characteristic.value, 'base64').toString('utf8');
+                const sample = JSON.parse(json) as LifeBandSample;
+                onVitals(sample);
+              } catch (parseError) {
+                console.warn('Failed to parse vitals payload', parseError);
+              }
+            },
+          );
+
+          resolve({
+            device,
+            stop: () => {
+              monitorSub.remove?.();
+              device.cancelConnection().catch(() => {});
+            },
+          });
+        } catch (connectError) {
+          reject(connectError);
+        }
+      });
+    }, true);
+  });
+}

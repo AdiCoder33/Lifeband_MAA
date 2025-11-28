@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
+import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { subscribeToLatestVitals } from '../../services/vitalsService';
 import { VitalsSample } from '../../types/vitals';
 import { shadows } from '../../theme/theme';
+import { signOutUser } from '../../services/authService';
 
 type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorHome'> & {
   profile?: UserProfile | null;
@@ -38,15 +39,29 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     return pages;
   }, [patientSummaries]);
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOutUser();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Sign out failed', message);
+    }
+  }, []);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('DoctorQR')} style={styles.linkIcon}>
-          <Text style={styles.linkIconText}>🔗</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => navigation.navigate('DoctorQR')} style={styles.linkIcon}>
+            <Text style={styles.linkIconText}>🔗</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSignOut} style={styles.linkIcon}>
+            <Text style={styles.linkIconText}>🚪</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
-  }, [navigation]);
+  }, [navigation, handleSignOut]);
 
   useEffect(() => {
     // no-op: patients handled in combined effect below
@@ -242,6 +257,10 @@ const styles = StyleSheet.create({
   },
   linkIconText: {
     fontSize: 20,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   subtitle: {
     color: colors.textSecondary,
