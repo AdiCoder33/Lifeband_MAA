@@ -24,7 +24,10 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.anonymous.Lifeband_MAA"
     },
@@ -34,6 +37,11 @@
     "plugins": [
       "expo-camera",
       "expo-document-picker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "561d6199-873a-4ec2-b46e-0460eba170cb"
+      }
+    }
   }
 }

@@ -118,7 +118,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   }, [uid]);
 
   return (
-    <ScreenContainer scrollable>
+    <ScreenContainer>
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
           <Text style={styles.heroTitle}>Hello, Dr. {profile?.name || 'Doctor'}</Text>

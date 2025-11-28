@@ -9,6 +9,7 @@ export type BleConnectionState = 'disconnected' | 'scanning' | 'connecting' | 'c
 export interface BleDeviceInfo {
   id: string;
   name?: string | null;
+  rssi?: number | null;
 }
 
 export interface LifeBandState {
@@ -95,7 +96,8 @@ export const scanAndConnectToLifeBand = async (
   onStateChange({ connectionState: 'scanning' });
 
   let strongest: Device | null = null;
-  manager.startDeviceScan([LIFEBAND_SERVICE_UUID], null, async (error, device) => {
+  // Scan all devices (no UUID filter) so user can see any nearby device
+  manager.startDeviceScan(null, null, async (error, device) => {
     if (error) {
       onStateChange({ connectionState: 'disconnected', lastError: error.message });
       manager?.stopDeviceScan();
@@ -266,3 +268,31 @@ export async function connectToNearestLifeBand(
     }, true);
   });
 }
+export const scanForDevices = async (durationMs = 5000): Promise<BleDeviceInfo[]> => {
+  initBleManager();
+  if (!manager) return [];
+  await requestPermissions();
+  const found: Record<string, BleDeviceInfo> = {};
+
+  return new Promise((resolve) => {
+    manager!.startDeviceScan(null, null, (error, device) => {
+      if (error) {
+        manager?.stopDeviceScan();
+        resolve(Object.values(found));
+        return;
+      }
+      if (device) {
+        found[device.id] = {
+          id: device.id,
+          name: device.name,
+          rssi: device.rssi,
+        };
+      }
+    });
+
+    setTimeout(() => {
+      manager?.stopDeviceScan();
+      resolve(Object.values(found));
+    }, durationMs);
+  });
+};
