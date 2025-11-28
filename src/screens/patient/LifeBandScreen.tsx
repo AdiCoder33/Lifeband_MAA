@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.card,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: 0,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,

@@ -25,6 +25,7 @@ export type PatientStackParamList = {
   LinkDoctor: undefined;
   PatientAppointments: undefined;
   PatientAppointmentDetail: { appointmentId: string };
+  AppointmentsCalendar: undefined;
 };
 
 export type DoctorStackParamList = {

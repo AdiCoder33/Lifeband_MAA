@@ -56,6 +56,7 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       hr: Number(json.hr),
       bp_sys: Number(json.bp_sys),
       bp_dia: Number(json.bp_dia),
+      ...(json.spo2 !== undefined ? { spo2: Number(json.spo2) } : {}),
       hrv: Number(json.hrv),
       timestamp: Number(json.timestamp),
     };
