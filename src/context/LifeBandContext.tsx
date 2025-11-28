@@ -19,6 +19,7 @@ type LifeBandContextValue = {
   connectLifeBand: () => Promise<void>;
   disconnect: () => Promise<void>;
   reconnectIfKnownDevice: () => Promise<void>;
+  connectToDevice: (deviceId: string) => Promise<void>;
 };
 
 const LifeBandContext = createContext<LifeBandContextValue | undefined>(undefined);
@@ -99,6 +100,24 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setConnecting(false);
   }, [handleVitals]);
 
+  const connectToDevice = useCallback(
+    async (deviceId: string) => {
+      setConnecting(true);
+      await reconnectLifeBandById(
+        deviceId,
+        (state) => {
+          setLifeBandState(state);
+          if (state.connectionState === 'connected' && state.device) {
+            persistDevice(state.device.id, state.device.name);
+          }
+        },
+        handleVitals,
+      );
+      setConnecting(false);
+    },
+    [handleVitals, persistDevice],
+  );
+
   const value = useMemo(
     () => ({
       lifeBandState,
@@ -107,8 +126,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       connectLifeBand,
       disconnect,
       reconnectIfKnownDevice,
+      connectToDevice,
     }),
-    [lifeBandState, latestVitals, connecting, connectLifeBand, disconnect, reconnectIfKnownDevice],
+    [lifeBandState, latestVitals, connecting, connectLifeBand, disconnect, reconnectIfKnownDevice, connectToDevice],
   );
 
   return <LifeBandContext.Provider value={value}>{children}</LifeBandContext.Provider>;
