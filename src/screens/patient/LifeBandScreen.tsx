@@ -44,7 +44,7 @@ const LifeBandScreen: React.FC<Props> = () => {
   };
 
   return (
-    <ScreenContainer scrollable>
+    <ScreenContainer>
       <Text style={styles.title}>LifeBand</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Status</Text>

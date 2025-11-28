@@ -68,6 +68,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const connectLifeBand = useCallback(async () => {
+    if (lifeBandState.connectionState === 'connected' || connecting) {
+      return;
+    }
     setConnecting(true);
     await scanAndConnectToLifeBand(
       (state) => {
@@ -102,6 +105,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const connectToDevice = useCallback(
     async (deviceId: string) => {
+      if (lifeBandState.connectionState === 'connected' || connecting) {
+        return;
+      }
       setConnecting(true);
       await reconnectLifeBandById(
         deviceId,
@@ -115,7 +121,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       );
       setConnecting(false);
     },
-    [handleVitals, persistDevice],
+    [handleVitals, persistDevice, lifeBandState.connectionState, connecting],
   );
 
   const value = useMemo(

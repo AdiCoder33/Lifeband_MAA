@@ -85,7 +85,7 @@ const VitalsHistoryScreen: React.FC = () => {
                   tickLabels: { fill: colors.textSecondary, fontSize: 10 },
                   grid: { stroke: 'transparent' },
                 }}
-                tickFormat={(tick) => format(new Date(tick), 'MMM d')}
+                tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
               />
               <VictoryAxis
                 dependentAxis
@@ -121,7 +121,7 @@ const VitalsHistoryScreen: React.FC = () => {
                   tickLabels: { fill: colors.textSecondary, fontSize: 10 },
                   grid: { stroke: 'transparent' },
                 }}
-                tickFormat={(tick) => format(new Date(tick), 'MMM d')}
+                tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
               />
               <VictoryAxis
                 dependentAxis
@@ -156,7 +156,7 @@ const VitalsHistoryScreen: React.FC = () => {
                   tickLabels: { fill: colors.textSecondary, fontSize: 10 },
                   grid: { stroke: 'transparent' },
                 }}
-                tickFormat={(tick) => format(new Date(tick), 'MMM d')}
+                tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
               />
               <VictoryAxis
                 dependentAxis
