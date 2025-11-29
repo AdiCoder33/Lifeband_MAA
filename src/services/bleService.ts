@@ -58,6 +58,7 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       bp_sys: Number(json.bp_sys),
       bp_dia: Number(json.bp_dia),
       ...(json.spo2 !== undefined ? { spo2: Number(json.spo2) } : {}),
+      ...(json.skinTemp !== undefined ? { skinTemp: Number(json.skinTemp) } : {}),
       hrv: Number(json.hrv),
       timestamp: Number(json.timestamp),
     };

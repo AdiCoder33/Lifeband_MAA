@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
@@ -52,7 +52,7 @@ const calculatePregnancy = (patientData?: UserProfile['patientData']) => {
 };
 
 const formatTime = (timestamp?: number) => {
-  if (!timestamp) return '—';
+  if (!timestamp) return 'â€”';
   const asMs = timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
   return format(new Date(asMs), 'HH:mm');
 };
@@ -96,10 +96,10 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       headerRight: () => (
         <View style={styles.navActions}>
           <TouchableOpacity style={styles.navAction} onPress={handleDoctorIconPress}>
-            <Text style={styles.navIcon}>🩺</Text>
+            <Text style={styles.navIcon}>ðŸ©º</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navAction} onPress={() => navigation.navigate('LifeBand')}>
-            <Text style={styles.navIcon}>📡</Text>
+            <Text style={styles.navIcon}>ðŸ“¡</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.navAction, styles.navSignOutAction]} onPress={handleSignOut}>
             <Text style={styles.navLabel}>Sign out</Text>
@@ -138,16 +138,16 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const preg = calculatePregnancy(patientProfile?.patientData);
   const pregnancyWeek = preg?.currentWeek ?? null;
   const daysRemaining = preg?.daysRemaining ?? null;
-  const currentWeekLabel = pregnancyWeek !== null ? `${pregnancyWeek}` : '—';
+  const currentWeekLabel = pregnancyWeek !== null ? `${pregnancyWeek}` : 'â€”';
   const daysRemainingLabel =
-    daysRemaining !== null && daysRemaining !== undefined ? `${daysRemaining}` : '—';
+    daysRemaining !== null && daysRemaining !== undefined ? `${daysRemaining}` : 'â€”';
   const trimesterLabel = pregnancyWeek
     ? pregnancyWeek <= 13
       ? '1st Trimester'
       : pregnancyWeek <= 27
       ? '2nd Trimester'
       : '3rd Trimester'
-    : '—';
+    : 'â€”';
   const weightGainSample = '12.5';
 
   const statusLabel =
@@ -169,12 +169,16 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     spo2: 98,
     bp_sys: 110,
     bp_dia: 72,
+    hrv: 70,
+    skinTemp: 36.5,
   };
   const displayVitals = {
     hr: latestVitals?.hr ?? baselineVitals.hr,
     spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
     bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
     bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
+    hrv: latestVitals?.hrv ?? baselineVitals.hrv,
+    skinTemp: latestVitals?.skinTemp ?? baselineVitals.skinTemp,
     timestamp: latestVitals?.timestamp,
   };
 
@@ -183,18 +187,18 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
           <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Super Mama'}!</Text>
-          <Text style={styles.heroSubtitle}>We’re cheering for you and baby every step of the way.</Text>
+          <Text style={styles.heroSubtitle}>We're cheering for you and baby every step of the way.</Text>
           <Text style={styles.heroCaption}>Track your journey, vitals, and upcoming visits below.</Text>
         </View>
         <View style={styles.heroBadge}>
-          <Text style={styles.heroIcon}>🤰</Text>
+          <Text style={styles.heroIcon}>LB</Text>
         </View>
       </View>
 
       <View style={[styles.card, styles.cardJourney]}>
         <View style={styles.cardHeader}>
           <View style={styles.cardHeaderContent}>
-            <Text style={styles.cardEmoji}>🤰</Text>
+            <Text style={styles.cardEmoji}>PJ</Text>
             <View style={styles.cardHeaderTextBlock}>
               <Text style={styles.cardTitle}>Pregnancy Journey</Text>
               <Text style={styles.cardSubtitle}>
@@ -246,6 +250,13 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             </Text>
             <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
           </View>
+          <View style={[styles.vitalsPanel, styles.vitalsPanelSoft]}>
+            <Text style={styles.vitalsPanelHeading}>HRV</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.hrv} ms</Text>
+            <View style={styles.vitalsDivider} />
+            <Text style={styles.vitalsPanelHeading}>Skin Temp</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.skinTemp} °C</Text>
+          </View>
         </View>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -271,7 +282,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Appointments</Text>
-          <Text style={styles.cardEmoji}>📅</Text>
+          <Text style={styles.cardEmoji}>PJ</Text>
         </View>
         <Text style={styles.cardCopy}>Open your calendar to review upcoming visits and plan ahead.</Text>
         <Button
@@ -432,11 +443,12 @@ const styles = StyleSheet.create({
   },
   vitalsPanelRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginTop: spacing.md,
   },
   vitalsPanel: {
-    width: '48%',
+    width: '32%',
     backgroundColor: colors.white,
     borderRadius: radii.md,
     paddingVertical: spacing.md,
@@ -447,6 +459,10 @@ const styles = StyleSheet.create({
   vitalsPanelAccent: {
     backgroundColor: '#F1F3FF',
     borderColor: colors.secondary,
+  },
+  vitalsPanelSoft: {
+    backgroundColor: '#F4FBF8',
+    borderColor: 'rgba(77, 182, 172, 0.4)',
   },
   vitalsPanelHeading: {
     color: colors.textSecondary,
@@ -521,3 +537,16 @@ const styles = StyleSheet.create({
 });
 
 export default PatientDashboardScreen;
+
+
+
+
+
+
+
+
+
+
+
+
+
