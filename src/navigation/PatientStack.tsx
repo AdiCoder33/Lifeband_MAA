@@ -7,6 +7,7 @@ import LinkDoctorScreen from '../screens/patient/LinkDoctorScreen';
 import PatientAppointmentsScreen from '../screens/patient/PatientAppointmentsScreen';
 import PatientAppointmentDetailScreen from '../screens/patient/PatientAppointmentDetailScreen';
 import AppointmentsCalendarScreen from '../screens/patient/AppointmentsCalendarScreen';
+import MeditronChatScreen from '../screens/patient/MeditronChatScreen';
 import { PatientStackParamList } from '../types/navigation';
 import { UserProfile } from '../types/user';
 
@@ -35,6 +36,7 @@ const PatientStack: React.FC<Props> = ({ profile }) => {
         options={{ title: 'Appointment' }}
       />
       <Stack.Screen name="AppointmentsCalendar" component={AppointmentsCalendarScreen} options={{ title: 'Calendar' }} />
+      <Stack.Screen name="MeditronChat" component={MeditronChatScreen} options={{ title: 'Ask Meditron' }} />
     </Stack.Navigator>
   );
 };

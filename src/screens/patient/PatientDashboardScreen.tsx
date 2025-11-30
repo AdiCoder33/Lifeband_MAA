@@ -292,6 +292,19 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           style={styles.buttonSpace}
         />
       </TouchableOpacity>
+
+      <View style={styles.bottomSpacer} />
+      <View style={styles.bottomDockWrapper} pointerEvents="box-none">
+        <View style={styles.bottomDock} />
+        <TouchableOpacity
+          style={styles.fab}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('MeditronChat')}
+        >
+          <Text style={styles.fabIcon}>💬</Text>
+          <Text style={styles.fabLabel}>AI Chat</Text>
+        </TouchableOpacity>
+      </View>
     </ScreenContainer>
   );
 };
@@ -505,6 +518,53 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     marginTop: spacing.xs,
   },
+  bottomSpacer: {
+    height: 140,
+  },
+  bottomDockWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: spacing.lg,
+    alignItems: 'center',
+  },
+  bottomDock: {
+    width: '70%',
+    height: 70,
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fab: {
+    position: 'absolute',
+    top: -24,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  fabIcon: {
+    fontSize: 22,
+    color: colors.white,
+  },
+  fabLabel: {
+    marginTop: 2,
+    fontSize: typography.small,
+    fontWeight: '700',
+    color: colors.white,
+  },
   buttonSpace: {
     marginTop: spacing.sm,
   },
@@ -537,6 +597,10 @@ const styles = StyleSheet.create({
 });
 
 export default PatientDashboardScreen;
+
+
+
+
 
 
 
