@@ -1,7 +1,8 @@
-// Simple client for Meditron-7B (OpenAI-compatible endpoint via llama.cpp)
+// Simple client for Meditron-7B (OpenAI-compatible endpoint via llama.cpp).
+// Uses Expo public env vars so you can configure per build.
 
-const BASE_URL = 'http://192.168.X.X:8080'; // replace with your host
-const API_KEY = 'my-secret-key'; // replace with your key
+const BASE_URL = process.env.EXPO_PUBLIC_MEDITRON_BASE_URL || 'http://192.168.X.X:8080';
+const API_KEY = process.env.EXPO_PUBLIC_MEDITRON_API_KEY || 'my-secret-key';
 const MODEL_NAME = 'meditron-7b';
 
 type ChatMessage = {
@@ -22,13 +23,14 @@ export async function askMeditron(userQuestion: string): Promise<string> {
     throw new Error('Please enter a question.');
   }
 
+  const sanitizedQuestion = userQuestion.trim();
   const messages: ChatMessage[] = [
     {
       role: 'system',
       content:
         'You are Meditron, a careful medical assistant. Answer in clear, simple English for a non-medical person. Be conservative and safe. Always add a final line saying: "This is general information only. A pregnant woman must follow her doctor’s advice."',
     },
-    { role: 'user', content: userQuestion.trim() },
+    { role: 'user', content: sanitizedQuestion },
   ];
 
   const body = {
@@ -36,7 +38,8 @@ export async function askMeditron(userQuestion: string): Promise<string> {
     messages,
     max_tokens: 220,
     temperature: 0.3,
-    stop: ['<|im_end|>', '<|im_start|>'],
+    stream: false,
+    stop: ['<|im_end|>', '<|im_start|>', '<im_end>', '<im_start>'],
   };
 
   let res: Response;
@@ -70,7 +73,25 @@ export async function askMeditron(userQuestion: string): Promise<string> {
     throw new Error('Meditron did not return a message.');
   }
 
-  return content.trim();
+  const cleaned = cleanContent(content, sanitizedQuestion);
+  return cleaned;
 }
 
 export default askMeditron;
+
+// Remove templating artifacts and echoed prompts from llama.cpp style replies
+function cleanContent(raw: string, userPrompt: string): string {
+  let text = raw;
+  // Strip known template markers
+  text = text.replace(/<\|?im_start\|?>/gi, '');
+  text = text.replace(/<\|?im_end\|?>/gi, '');
+  text = text.replace(/<im_start\|?assistant>/gi, '');
+  text = text.replace(/<im_start\|?user>/gi, '');
+  // Remove echoed user prompt at the start if present
+  const trimmedPrompt = userPrompt.trim();
+  if (text.trim().toLowerCase().startsWith(trimmedPrompt.toLowerCase())) {
+    text = text.trim().slice(trimmedPrompt.length);
+  }
+  // Collapse extra whitespace
+  return text.trim();
+}
