@@ -53,7 +53,7 @@ const calculatePregnancy = (patientData?: UserProfile['patientData']) => {
 
 const formatTime = (timestamp?: number) => {
   if (!timestamp) return '—';
-  const asMs = timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
+  const asMs = timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
   return format(new Date(asMs), 'HH:mm');
 };
 
@@ -163,19 +163,20 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       ? colors.attention
       : colors.muted;
 
-  const usingSampleVitals = !latestVitals;
-  const baselineVitals = {
-    hr: 78,
-    spo2: 98,
-    bp_sys: 110,
-    bp_dia: 72,
-  };
+  // Check if we have received real vitals data (timestamp > 0 means real data from ESP32)
+  const hasRealData = latestVitals && latestVitals.timestamp > 0;
+  const usingSampleVitals = !hasRealData;
+  
   const displayVitals = {
-    hr: latestVitals?.hr ?? baselineVitals.hr,
-    spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
-    bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
-    bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
-    timestamp: latestVitals?.timestamp,
+    hr: latestVitals?.hr ?? null,
+    spo2: latestVitals?.spo2 ?? null,
+    bp_sys: latestVitals?.bp_sys ?? null,
+    bp_dia: latestVitals?.bp_dia ?? null,
+    hrv: latestVitals?.hrv ?? null,
+    ptt: latestVitals?.ptt ?? null,
+    ecg: latestVitals?.ecg ?? null,
+    ir: latestVitals?.ir ?? null,
+    timestamp: latestVitals?.timestamp ?? null,
   };
 
   return (
@@ -234,27 +235,83 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         <View style={styles.vitalsPanelRow}>
           <View style={styles.vitalsPanel}>
             <Text style={styles.vitalsPanelHeading}>Heart Rate</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
+            {displayVitals.hr !== null ? (
+              <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
+            ) : (
+              <Text style={styles.vitalsPanelValueNull}>--</Text>
+            )}
             <View style={styles.vitalsDivider} />
             <Text style={styles.vitalsPanelHeading}>SpO₂</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
+            {displayVitals.spo2 !== null ? (
+              <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
+            ) : (
+              <Text style={styles.vitalsPanelValueNull}>--</Text>
+            )}
           </View>
           <View style={[styles.vitalsPanel, styles.vitalsPanelAccent]}>
             <Text style={styles.vitalsPanelHeading}>Blood Pressure</Text>
-            <Text style={styles.vitalsPanelValue}>
-              {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
-            </Text>
+            {displayVitals.bp_sys !== null && displayVitals.bp_dia !== null ? (
+              <Text style={styles.vitalsPanelValue}>
+                {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
+              </Text>
+            ) : (
+              <Text style={styles.vitalsPanelValueNull}>--/--</Text>
+            )}
             <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
           </View>
         </View>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={styles.statusText}>{statusLabel}</Text>
+          <Text style={styles.statusText}>
+            {lifeBandState.connectionState === 'connected'
+              ? hasRealData
+                ? 'Live monitoring active'
+                : 'Connected - waiting for data...'
+              : statusLabel}
+          </Text>
         </View>
+        {lifeBandState.connectionState === 'connected' && !hasRealData && (
+          <View style={styles.waitingBox}>
+            <Text style={styles.waitingText}>📡 Waiting for LifeBand to send vitals data...</Text>
+          </View>
+        )}
+        {lifeBandState.connectionState !== 'connected' && (
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>Connect your LifeBand to see live readings.</Text>
+          </View>
+        )}
+        {latestVitals && hasRealData && (
+          <View style={styles.sensorRow}>
+            {typeof displayVitals.hrv === 'number' && (
+              <View style={styles.sensorTile}>
+                <Text style={styles.sensorLabel}>HRV</Text>
+                <Text style={styles.sensorValue}>{Math.round(displayVitals.hrv)} ms</Text>
+              </View>
+            )}
+            {typeof displayVitals.ptt === 'number' && (
+              <View style={styles.sensorTile}>
+                <Text style={styles.sensorLabel}>PTT</Text>
+                <Text style={styles.sensorValue}>{displayVitals.ptt.toFixed(1)} ms</Text>
+              </View>
+            )}
+            {typeof displayVitals.ecg === 'number' && (
+              <View style={styles.sensorTile}>
+                <Text style={styles.sensorLabel}>ECG</Text>
+                <Text style={styles.sensorValue}>{Math.round(displayVitals.ecg)}</Text>
+              </View>
+            )}
+            {typeof displayVitals.ir === 'number' && (
+              <View style={styles.sensorTile}>
+                <Text style={styles.sensorLabel}>PPG IR</Text>
+                <Text style={styles.sensorValue}>{Math.round(displayVitals.ir)}</Text>
+              </View>
+            )}
+          </View>
+        )}
         <Text style={styles.meta}>
           {usingSampleVitals
-            ? 'Showing reference values until your LifeBand shares live readings.'
-            : `Last sync ${formatTime(displayVitals.timestamp)}`}
+            ? 'Waiting for vitals data from LifeBand...'
+            : `Last sync ${formatTime(displayVitals.timestamp ?? undefined)}`}
         </Text>
         <Button
           title="View History"
@@ -459,6 +516,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: spacing.xs,
   },
+  vitalsPanelValueNull: {
+    color: colors.textSecondary,
+    fontSize: typography.subheading,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
   vitalsPanelHint: {
     marginTop: spacing.xs,
     color: colors.textSecondary,
@@ -482,6 +545,55 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  waitingBox: {
+    backgroundColor: '#FEF3C7',
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginTop: spacing.sm,
+  },
+  waitingText: {
+    fontSize: typography.body,
+    color: '#92400E',
+    textAlign: 'center',
+  },
+  infoBox: {
+    backgroundColor: '#E0F2FE',
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginTop: spacing.sm,
+  },
+  infoText: {
+    fontSize: typography.body,
+    color: '#0C4A6E',
+    textAlign: 'center',
+  },
+  sensorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  sensorTile: {
+    backgroundColor: colors.white,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+    minWidth: 70,
+  },
+  sensorLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  sensorValue: {
+    marginTop: 2,
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   meta: {

@@ -59,9 +59,14 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const handleVitals = useCallback(
     async (sample: VitalsSample) => {
+      console.log('[CONTEXT] Received vitals:', JSON.stringify(sample));
       setLatestVitals(sample);
+      
+      // Save to Firestore in background without blocking
       if (uid) {
-        await saveVitalsSample(uid, sample);
+        saveVitalsSample(uid, sample)
+          .then(() => console.log('[CONTEXT] Vitals saved'))
+          .catch((error) => console.warn('[CONTEXT] Save failed (non-critical):', error?.message || 'Unknown error'));
       }
     },
     [uid],
