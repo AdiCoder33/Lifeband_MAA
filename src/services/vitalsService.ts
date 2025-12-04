@@ -24,8 +24,13 @@ const vitalsCollectionRef = (userId: string) =>
   collection(firestore, 'users', userId, 'vitals').withConverter(vitalsConverter);
 
 export const saveVitalsSample = async (userId: string, sample: VitalsSample): Promise<void> => {
+  // Filter out undefined fields to prevent Firestore validation errors
+  const cleanedSample = Object.fromEntries(
+    Object.entries(sample).filter(([_, value]) => value !== undefined)
+  );
+  
   await addDoc(vitalsCollectionRef(userId), {
-    ...sample,
+    ...cleanedSample,
     timestamp: sample.timestamp || Date.now(),
     serverTimestamp: serverTimestamp(),
   } as any);

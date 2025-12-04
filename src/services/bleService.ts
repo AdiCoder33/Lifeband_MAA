@@ -27,6 +27,8 @@ export const LIFEBAND_DEVICE_NAME = 'LIFEBAND-S3';
 let manager: BleManager | null = null;
 let notificationSub: Subscription | null = null;
 let currentDevice: Device | null = null;
+let isCleaningUp = false; // Flag to prevent multiple simultaneous cleanups
+let isConnecting = false; // Flag to prevent simultaneous connection attempts
 
 export const initBleManager = () => {
   if (!manager) {
@@ -72,7 +74,16 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
     console.log('[PARSE] JSON string:', jsonString);
     const json = JSON.parse(jsonString);
     
+    // Check if this is a hourly summary (different type)
+    if (json.type === 'hourly_summary') {
+      console.log('[PARSE] ✓ Hourly summary received:', json);
+      // You can handle hourly summaries separately or store them differently
+      // For now, we'll skip them in the vitals stream
+      return null;
+    }
+    
     const sample: VitalsSample = {
+      // Core vitals
       hr: Number(json.hr) || 0,
       bp_sys: Number(json.bp_sys) || 0,
       bp_dia: Number(json.bp_dia) || 0,
@@ -81,38 +92,121 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       ptt: json.ptt !== undefined ? Number(json.ptt) : undefined,
       ecg: json.ecg !== undefined ? Number(json.ecg) : undefined,
       ir: json.ir !== undefined ? Number(json.ir) : undefined,
-      timestamp: Date.now(),
+      red: json.red !== undefined ? Number(json.red) : undefined,
+      timestamp: json.timestamp || Date.now(),
+      
+      // Extended heart rate sources
+      hr_ecg: json.hr_ecg !== undefined ? Number(json.hr_ecg) : undefined,
+      hr_ppg: json.hr_ppg !== undefined ? Number(json.hr_ppg) : undefined,
+      hr_source: json.hr_source,
+      
+      // Signal quality
+      ecg_quality: json.ecg_quality !== undefined ? Number(json.ecg_quality) : undefined,
+      ppg_quality: json.ppg_quality !== undefined ? Number(json.ppg_quality) : undefined,
+      
+      // BP method
+      bp_method: json.bp_method,
+      
+      // HRV metrics
+      hrv_sdnn: json.hrv_sdnn !== undefined ? Number(json.hrv_sdnn) : undefined,
+      
+      // AI: Arrhythmia Detection
+      rhythm: json.rhythm,
+      rhythm_confidence: json.rhythm_confidence !== undefined ? Number(json.rhythm_confidence) : undefined,
+      arrhythmia_alert: json.arrhythmia_alert === true,
+      
+      // AI: Anemia Detection
+      anemia_risk: json.anemia_risk,
+      anemia_confidence: json.anemia_confidence !== undefined ? Number(json.anemia_confidence) : undefined,
+      anemia_alert: json.anemia_alert === true,
+      
+      // AI: Preeclampsia Detection
+      preeclampsia_risk: json.preeclampsia_risk,
+      preeclampsia_confidence: json.preeclampsia_confidence !== undefined ? Number(json.preeclampsia_confidence) : undefined,
+      preeclampsia_alert: json.preeclampsia_alert === true,
+      
+      // Overall maternal health
+      maternal_health_score: json.maternal_health_score !== undefined ? Number(json.maternal_health_score) : undefined,
+      
+      // Buffered data flag
+      buffered: json.buffered === true,
     };
+    
+    // Log critical alerts
+    if (sample.arrhythmia_alert || sample.anemia_alert || sample.preeclampsia_alert) {
+      console.warn('[PARSE] 🚨 CRITICAL ALERT DETECTED!');
+      if (sample.arrhythmia_alert) {
+        console.warn(`[PARSE] - Arrhythmia: ${sample.rhythm} (${sample.rhythm_confidence}% confidence)`);
+      }
+      if (sample.anemia_alert) {
+        console.warn(`[PARSE] - Anemia Risk: ${sample.anemia_risk} (${sample.anemia_confidence}% confidence)`);
+      }
+      if (sample.preeclampsia_alert) {
+        console.warn(`[PARSE] - Preeclampsia Risk: ${sample.preeclampsia_risk} (${sample.preeclampsia_confidence}% confidence)`);
+      }
+    }
+    
     console.log('[PARSE] ✓ Parsed sample:', JSON.stringify(sample));
     return sample;
-  } catch (error) {
-    console.error('[PARSE] Failed to parse vitals payload:', error);
+  } catch (error: any) {
+    const errorMsg = error.reason || error.message || 'Parse error';
+    console.error('[PARSE] Failed to parse vitals payload:', errorMsg);
     console.error('[PARSE] Raw payload:', value);
     return null;
   }
 };
 
 const cleanupNotification = () => {
-  try {
-    if (notificationSub) {
+  if (isCleaningUp) {
+    console.log('[BLE] Cleanup already in progress, skipping');
+    return;
+  }
+  
+  if (notificationSub) {
+    isCleaningUp = true;
+    try {
       notificationSub.remove();
+      console.log('[BLE] Notification subscription removed');
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'Cleanup error';
+      console.warn('[BLE] Cleanup notification error:', errorMsg);
+    } finally {
       notificationSub = null;
+      isCleaningUp = false;
     }
-  } catch (error) {
-    console.warn('Cleanup notification error:', error);
-    notificationSub = null;
   }
 };
 
 export const disconnectLifeBand = async (): Promise<void> => {
-  cleanupNotification();
+  console.log('[BLE] Disconnecting LifeBand...');
+  
+  // Clean up notification first
+  try {
+    cleanupNotification();
+  } catch (error: any) {
+    const errorMsg = error?.reason || error?.message || 'Cleanup error';
+    console.warn('[BLE] Cleanup during disconnect error:', errorMsg);
+  }
+  
+  // Then disconnect device
   if (currentDevice) {
+    const deviceToDisconnect = currentDevice;
+    currentDevice = null; // Clear reference immediately to prevent re-entry
+    
     try {
-      await currentDevice.cancelConnection();
-    } catch (error) {
-      console.warn('disconnect error', error);
+      const isConnected = await deviceToDisconnect.isConnected();
+      if (isConnected) {
+        await deviceToDisconnect.cancelConnection();
+        console.log('[BLE] Device disconnected successfully');
+      } else {
+        console.log('[BLE] Device already disconnected');
+      }
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'Disconnect error';
+      console.warn('[BLE] Disconnect error:', errorMsg);
     }
-    currentDevice = null;
+  } else {
+    console.log('[BLE] No device to disconnect');
   }
 };
 
@@ -120,41 +214,69 @@ export const scanAndConnectToLifeBand = async (
   onStateChange: (state: LifeBandState) => void,
   onVitalsData: (sample: VitalsSample) => void,
 ): Promise<void> => {
-  initBleManager();
-  if (!manager) return;
-  await requestPermissions();
-  onStateChange({ connectionState: 'scanning' });
-
-  let strongest: Device | null = null;
-  // Scan all devices (no UUID filter) so user can see any nearby device
-  manager.startDeviceScan(null, null, async (error, device) => {
-    if (error) {
-      onStateChange({ connectionState: 'disconnected', lastError: error.message });
-      manager?.stopDeviceScan();
-      return;
-    }
-    if (device && (device.name === LIFEBAND_DEVICE_NAME || device.name?.startsWith('LIFEBAND-') || device.serviceUUIDs?.includes(LIFEBAND_SERVICE_UUID))) {
-      if (!strongest || (device.rssi || -100) > (strongest.rssi || -100)) {
-        strongest = device;
-      }
-    }
-  });
-
-  // Wait briefly to collect candidates
-  await new Promise((resolve) => setTimeout(resolve, 4000));
-  manager.stopDeviceScan();
-
-  if (!strongest) {
-    onStateChange({ connectionState: 'disconnected', lastError: 'No LifeBand found nearby.' });
+  // Prevent multiple simultaneous connection attempts
+  if (isConnecting) {
+    console.log('[BLE] Connection already in progress, skipping');
     return;
   }
-
-  const strongestDevice = strongest as Device;
-  console.log('[BLE] Connecting to:', strongestDevice.name, 'ID:', strongestDevice.id);
-  onStateChange({ connectionState: 'connecting', device: { id: strongestDevice.id, name: strongestDevice.name } });
-
+  
+  isConnecting = true;
+  
   try {
-    const connected = await strongestDevice.connect();
+    initBleManager();
+    if (!manager) {
+      onStateChange({ connectionState: 'disconnected', lastError: 'BLE Manager not initialized' });
+      isConnecting = false;
+      return;
+    }
+    await requestPermissions();
+    onStateChange({ connectionState: 'scanning' });
+
+    let strongest: Device | null = null;
+    // Scan all devices (no UUID filter) so user can see any nearby device
+    manager.startDeviceScan(null, null, async (error, device) => {
+      if (error) {
+        const errorMsg = error.reason || error.message || 'Scan failed';
+        onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
+        manager?.stopDeviceScan();
+        return;
+      }
+      if (device && (device.name === LIFEBAND_DEVICE_NAME || device.name?.startsWith('LIFEBAND-') || device.serviceUUIDs?.includes(LIFEBAND_SERVICE_UUID))) {
+        if (!strongest || (device.rssi || -100) > (strongest.rssi || -100)) {
+          strongest = device;
+        }
+      }
+    });
+
+    // Wait briefly to collect candidates
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    manager.stopDeviceScan();
+
+    if (!strongest) {
+      onStateChange({ connectionState: 'disconnected', lastError: 'No LifeBand found nearby.' });
+      isConnecting = false;
+      return;
+    }
+
+    const strongestDevice = strongest as Device;
+    console.log('[BLE] Connecting to:', strongestDevice.name, 'ID:', strongestDevice.id);
+    onStateChange({ connectionState: 'connecting', device: { id: strongestDevice.id, name: strongestDevice.name } });
+
+    // Clean up any existing connections first
+    if (currentDevice) {
+      try {
+        await currentDevice.cancelConnection();
+      } catch (e) {
+        console.log('[BLE] Cleaned up previous connection');
+      }
+      currentDevice = null;
+    }
+    
+    const connected = await strongestDevice.connect({ 
+      autoConnect: false,
+      requestMTU: 512,
+      timeout: 10000
+    });
     console.log('[BLE] Physical connection established');
     currentDevice = connected;
     
@@ -179,25 +301,35 @@ export const scanAndConnectToLifeBand = async (
 
     // Step 5: Subscribe to vitals notifications FIRST
     console.log('[BLE] Setting up vitals notification listener...');
+    
+    // Clean up old subscription if exists
+    cleanupNotification();
+    
     notificationSub = connected.monitorCharacteristicForService(
       LIFEBAND_SERVICE_UUID,
       LIFEBAND_VITALS_CHAR_UUID,
       (error: any, characteristic: any) => {
-        if (error) {
-          console.warn('[BLE] Notification error:', error.message || error);
-          return;
-        }
-        if (!characteristic?.value) {
-          console.warn('[BLE] Received notification with no value');
-          return;
-        }
-        console.log('[BLE] ✓ Notification received from vitals characteristic');
-        const sample = parseVitalsPayload(characteristic.value);
-        if (sample) {
-          console.log('[BLE] ✓ Successfully parsed vitals notification');
-          onVitalsData(sample);
-        } else {
-          console.warn('[BLE] ✗ Failed to parse vitals');
+        try {
+          if (error) {
+            const errorMsg = error.reason || error.message || 'Unknown notification error';
+            console.warn('[BLE] Notification error:', errorMsg);
+            return;
+          }
+          if (!characteristic?.value) {
+            console.warn('[BLE] Received notification with no value');
+            return;
+          }
+          console.log('[BLE] ✓ Notification received from vitals characteristic');
+          const sample = parseVitalsPayload(characteristic.value);
+          if (sample) {
+            console.log('[BLE] ✓ Successfully parsed vitals notification');
+            onVitalsData(sample);
+          } else {
+            console.warn('[BLE] ✗ Failed to parse vitals');
+          }
+        } catch (callbackError: any) {
+          const errorMsg = callbackError.reason || callbackError.message || 'Callback error';
+          console.error('[BLE] Notification callback error:', errorMsg);
         }
       },
     );
@@ -216,25 +348,65 @@ export const scanAndConnectToLifeBand = async (
       );
       console.log('[BLE] ✓ START command sent successfully');
     } catch (writeError: any) {
-      console.warn('[BLE] Failed to send START command:', writeError.message);
+      const errorMsg = writeError.reason || writeError.message || 'Unknown error';
+      console.warn('[BLE] Failed to send START command:', errorMsg);
       // Don't fail the connection - ESP32 auto-enables notifications
     }
 
-    // Monitor disconnection
+    // Monitor disconnection with safe error handling
     connected.onDisconnected((error) => {
-      console.log('[BLE] Device disconnected:', error?.message || 'User disconnected');
-      cleanupNotification();
-      currentDevice = null;
-      onStateChange({ connectionState: 'disconnected', lastError: error ? 'Connection lost' : undefined });
+      console.log('[BLE] onDisconnected triggered');
+      
+      // Perform all cleanup in try-catch to prevent crashes
+      try {
+        const errorMsg = error?.reason || error?.message || 'User disconnected';
+        console.log('[BLE] Device disconnected:', errorMsg);
+        
+        // Safe cleanup
+        try {
+          cleanupNotification();
+        } catch (cleanupError: any) {
+          console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+        }
+        
+        // Clear device reference
+        currentDevice = null;
+        
+        // Safe state update
+        try {
+          onStateChange({ 
+            connectionState: 'disconnected', 
+            lastError: error ? 'Connection lost' : undefined 
+          });
+        } catch (stateError: any) {
+          console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
+        }
+      } catch (outerError: any) {
+        // Catch-all to absolutely prevent crashes
+        console.error('[BLE] Critical error in disconnect handler:', outerError?.message || outerError);
+      }
     });
 
     onStateChange({ connectionState: 'connected', device: { id: connected.id, name: connected.name } });
     console.log('[BLE] ✓✓✓ Connection fully established ✓✓✓');
   } catch (error: any) {
-    console.error('[BLE] Connection failed:', error.message);
-    onStateChange({ connectionState: 'disconnected', lastError: error.message });
+    const errorMsg = error?.reason || error?.message || 'Connection failed';
+    console.error('[BLE] Connection failed:', errorMsg);
+    
+    // Clean up on error
     cleanupNotification();
-    currentDevice = null;
+    if (currentDevice) {
+      try {
+        await currentDevice.cancelConnection();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      currentDevice = null;
+    }
+    
+    onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
+  } finally {
+    isConnecting = false; // Always reset connection flag
   }
 };
 
@@ -243,14 +415,56 @@ export const reconnectLifeBandById = async (
   onStateChange: (state: LifeBandState) => void,
   onVitalsData: (sample: VitalsSample) => void,
 ): Promise<void> => {
-  initBleManager();
-  if (!manager) return;
-  await requestPermissions();
-  onStateChange({ connectionState: 'connecting', device: { id: deviceId } });
-
+  // Prevent multiple simultaneous reconnection attempts
+  if (isConnecting) {
+    console.log('[BLE] Reconnection already in progress, skipping');
+    onStateChange({ connectionState: 'connecting', device: { id: deviceId } });
+    return;
+  }
+  
+  // Check if already connected to this device
+  if (currentDevice) {
+    try {
+      const isConnected = await currentDevice.isConnected();
+      if (isConnected && currentDevice.id === deviceId) {
+        console.log('[BLE] Already connected to this device');
+        onStateChange({ connectionState: 'connected', device: { id: deviceId, name: currentDevice.name } });
+        return;
+      }
+    } catch (e) {
+      console.log('[BLE] Device connection check failed, proceeding with reconnect');
+    }
+  }
+  
+  isConnecting = true;
+  
   try {
+    initBleManager();
+    if (!manager) {
+      onStateChange({ connectionState: 'disconnected', lastError: 'BLE Manager not initialized' });
+      isConnecting = false;
+      return;
+    }
+    await requestPermissions();
+    onStateChange({ connectionState: 'connecting', device: { id: deviceId } });
+
     console.log('[BLE] Reconnecting to device ID:', deviceId);
-    const device = await manager.connectToDevice(deviceId);
+    
+    // Clean up any existing connections first
+    if (currentDevice) {
+      try {
+        await currentDevice.cancelConnection();
+      } catch (e) {
+        console.log('[BLE] Cleaned up previous connection');
+      }
+      currentDevice = null;
+    }
+    
+    const device = await manager.connectToDevice(deviceId, { 
+      autoConnect: false,
+      requestMTU: 512,
+      timeout: 10000
+    });
     console.log('[BLE] Physical reconnection established');
     currentDevice = device;
     
@@ -275,25 +489,35 @@ export const reconnectLifeBandById = async (
 
     // Subscribe to notifications
     console.log('[BLE] Setting up notification listener...');
+    
+    // Clean up old subscription if exists
+    cleanupNotification();
+    
     notificationSub = device.monitorCharacteristicForService(
       LIFEBAND_SERVICE_UUID,
       LIFEBAND_VITALS_CHAR_UUID,
       (error, characteristic) => {
-        if (error) {
-          console.warn('[BLE] Notification error:', error.message || error);
-          return;
-        }
-        if (!characteristic?.value) {
-          console.warn('[BLE] Received notification with no value');
-          return;
-        }
-        console.log('[BLE] ✓ Notification received');
-        const sample = parseVitalsPayload(characteristic.value);
-        if (sample) {
-          console.log('[BLE] ✓ Successfully parsed vitals');
-          onVitalsData(sample);
-        } else {
-          console.warn('[BLE] ✗ Failed to parse vitals');
+        try {
+          if (error) {
+            const errorMsg = error.reason || error.message || 'Unknown notification error';
+            console.warn('[BLE] Notification error:', errorMsg);
+            return;
+          }
+          if (!characteristic?.value) {
+            console.warn('[BLE] Received notification with no value');
+            return;
+          }
+          console.log('[BLE] ✓ Notification received');
+          const sample = parseVitalsPayload(characteristic.value);
+          if (sample) {
+            console.log('[BLE] ✓ Successfully parsed vitals');
+            onVitalsData(sample);
+          } else {
+            console.warn('[BLE] ✗ Failed to parse vitals');
+          }
+        } catch (callbackError: any) {
+          const errorMsg = callbackError.reason || callbackError.message || 'Callback error';
+          console.error('[BLE] Notification callback error:', errorMsg);
         }
       },
     );
@@ -312,23 +536,64 @@ export const reconnectLifeBandById = async (
       );
       console.log('[BLE] ✓ START command sent successfully');
     } catch (writeError: any) {
-      console.warn('[BLE] Failed to send START command:', writeError.message);
+      const errorMsg = writeError.reason || writeError.message || 'Unknown error';
+      console.warn('[BLE] Failed to send START command:', errorMsg);
     }
 
+    // Monitor disconnection with safe error handling
     device.onDisconnected((error) => {
-      console.log('[BLE] Device disconnected:', error?.message || 'User disconnected');
-      cleanupNotification();
-      currentDevice = null;
-      onStateChange({ connectionState: 'disconnected', lastError: error ? 'Connection lost' : undefined });
+      console.log('[BLE] onDisconnected triggered (reconnect path)');
+      
+      // Perform all cleanup in try-catch to prevent crashes
+      try {
+        const errorMsg = error?.reason || error?.message || 'User disconnected';
+        console.log('[BLE] Device disconnected:', errorMsg);
+        
+        // Safe cleanup
+        try {
+          cleanupNotification();
+        } catch (cleanupError: any) {
+          console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+        }
+        
+        // Clear device reference
+        currentDevice = null;
+        
+        // Safe state update
+        try {
+          onStateChange({ 
+            connectionState: 'disconnected', 
+            lastError: error ? 'Connection lost' : undefined 
+          });
+        } catch (stateError: any) {
+          console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
+        }
+      } catch (outerError: any) {
+        // Catch-all to absolutely prevent crashes
+        console.error('[BLE] Critical error in disconnect handler:', outerError?.message || outerError);
+      }
     });
 
     onStateChange({ connectionState: 'connected', device: { id: device.id, name: device.name } });
     console.log('[BLE] ✓✓✓ Reconnection fully established ✓✓✓');
   } catch (error: any) {
-    console.error('[BLE] Reconnection failed:', error.message);
-    onStateChange({ connectionState: 'disconnected', lastError: error.message });
+    const errorMsg = error?.reason || error?.message || 'Reconnection failed';
+    console.error('[BLE] Reconnection failed:', errorMsg);
+    
+    // Clean up on error
     cleanupNotification();
-    currentDevice = null;
+    if (currentDevice) {
+      try {
+        await currentDevice.cancelConnection();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      currentDevice = null;
+    }
+    
+    onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
+  } finally {
+    isConnecting = false; // Always reset connection flag
   }
 };
 

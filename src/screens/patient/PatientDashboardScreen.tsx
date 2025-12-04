@@ -184,13 +184,115 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
           <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Super Mama'}!</Text>
-          <Text style={styles.heroSubtitle}>We’re cheering for you and baby every step of the way.</Text>
+          <Text style={styles.heroSubtitle}>We're cheering for you and baby every step of the way.</Text>
           <Text style={styles.heroCaption}>Track your journey, vitals, and upcoming visits below.</Text>
         </View>
         <View style={styles.heroBadge}>
           <Text style={styles.heroIcon}>🤰</Text>
         </View>
       </View>
+
+      {/* AI Health Insights - Show when connected with data */}
+      {hasRealData && latestVitals && (latestVitals.maternal_health_score !== undefined || latestVitals.rhythm || latestVitals.anemia_risk || latestVitals.preeclampsia_risk) && (
+        <View style={[styles.card, styles.cardHealth]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderContent}>
+              <Text style={styles.cardEmoji}>🧠</Text>
+              <View style={styles.cardHeaderTextBlock}>
+                <Text style={styles.cardTitle}>AI Health Insights</Text>
+                <Text style={styles.cardSubtitle}>Real-time maternal health monitoring</Text>
+              </View>
+            </View>
+          </View>
+          
+          {latestVitals.maternal_health_score !== undefined && (
+            <View style={styles.healthScorePanel}>
+              <Text style={styles.healthScoreLabel}>Maternal Health Score</Text>
+              <Text style={[
+                styles.healthScoreValue,
+                { color: latestVitals.maternal_health_score >= 80 ? colors.healthy : 
+                         latestVitals.maternal_health_score >= 60 ? colors.attention : 
+                         colors.critical }
+              ]}>
+                {latestVitals.maternal_health_score}/100
+              </Text>
+              <Text style={styles.healthScoreHint}>
+                {latestVitals.maternal_health_score >= 80 ? 'Excellent health indicators' :
+                 latestVitals.maternal_health_score >= 60 ? 'Monitor regularly' :
+                 'Consult your doctor'}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.aiInsightsRow}>
+            {latestVitals.rhythm && (
+              <View style={styles.aiInsightTile}>
+                <Text style={styles.aiInsightLabel}>Heart Rhythm</Text>
+                <Text style={[
+                  styles.aiInsightValue,
+                  { color: latestVitals.rhythm === 'Normal' ? colors.healthy : colors.attention }
+                ]}>
+                  {latestVitals.rhythm}
+                </Text>
+                {latestVitals.rhythm_confidence !== undefined && (
+                  <Text style={styles.aiInsightMeta}>{String(latestVitals.rhythm_confidence)}% confidence</Text>
+                )}
+              </View>
+            )}
+            
+            {latestVitals.anemia_risk && (
+              <View style={styles.aiInsightTile}>
+                <Text style={styles.aiInsightLabel}>Anemia Risk</Text>
+                <Text style={[
+                  styles.aiInsightValue,
+                  { color: latestVitals.anemia_risk === 'Low' ? colors.healthy : 
+                           latestVitals.anemia_risk.includes('Moderate') ? colors.attention : 
+                           colors.critical }
+                ]}>
+                  {latestVitals.anemia_risk}
+                </Text>
+                {latestVitals.anemia_confidence !== undefined && (
+                  <Text style={styles.aiInsightMeta}>{String(latestVitals.anemia_confidence)}% confidence</Text>
+                )}
+              </View>
+            )}
+            
+            {latestVitals.preeclampsia_risk && (
+              <View style={styles.aiInsightTile}>
+                <Text style={styles.aiInsightLabel}>Preeclampsia Risk</Text>
+                <Text style={[
+                  styles.aiInsightValue,
+                  { color: latestVitals.preeclampsia_risk === 'Low' ? colors.healthy : 
+                           latestVitals.preeclampsia_risk.includes('Moderate') ? colors.attention : 
+                           colors.critical }
+                ]}>
+                  {latestVitals.preeclampsia_risk}
+                </Text>
+                {latestVitals.preeclampsia_confidence !== undefined && (
+                  <Text style={styles.aiInsightMeta}>{String(latestVitals.preeclampsia_confidence)}% confidence</Text>
+                )}
+              </View>
+            )}
+          </View>
+          
+          {(latestVitals.hr_source || latestVitals.bp_method) && (
+            <View style={styles.signalQualityRow}>
+              {latestVitals.hr_source && (
+                <Text style={styles.signalQualityText}>HR Source: {latestVitals.hr_source}</Text>
+              )}
+              {latestVitals.bp_method && (
+                <Text style={styles.signalQualityText}>BP Method: {latestVitals.bp_method}</Text>
+              )}
+              {latestVitals.ecg_quality !== undefined && (
+                <Text style={styles.signalQualityText}>ECG Quality: {String(latestVitals.ecg_quality)}%</Text>
+              )}
+              {latestVitals.ppg_quality !== undefined && (
+                <Text style={styles.signalQualityText}>PPG Quality: {String(latestVitals.ppg_quality)}%</Text>
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       <View style={[styles.card, styles.cardJourney]}>
         <View style={styles.cardHeader}>
@@ -629,6 +731,127 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '600',
     fontSize: typography.small,
+  },
+  // Alert Card Styles
+  alertCard: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#DC2626',
+    borderWidth: 2,
+    marginHorizontal: 0,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  alertIcon: {
+    fontSize: 24,
+    marginRight: spacing.sm,
+  },
+  alertTitle: {
+    fontSize: typography.subheading,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  alertItem: {
+    marginBottom: spacing.sm,
+  },
+  alertLabel: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    color: '#7F1D1D',
+  },
+  alertValue: {
+    fontSize: typography.small,
+    color: '#991B1B',
+    marginTop: 2,
+  },
+  alertFooter: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: '#991B1B',
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
+  },
+  // AI Health Insights Styles
+  cardHealth: {
+    backgroundColor: '#F0F9FF',
+  },
+  healthScorePanel: {
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+  },
+  healthScoreLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  healthScoreValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    marginTop: spacing.xs,
+  },
+  healthScoreHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  aiInsightsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  aiInsightTile: {
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    flex: 1,
+    minWidth: 150,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+  },
+  aiInsightLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  aiInsightValue: {
+    fontSize: typography.subheading,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  aiInsightMeta: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  signalQualityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(40, 53, 147, 0.04)',
+    borderRadius: radii.sm,
+  },
+  signalQualityText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });
 

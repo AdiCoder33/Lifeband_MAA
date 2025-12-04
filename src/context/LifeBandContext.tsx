@@ -30,14 +30,29 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [latestVitals, setLatestVitals] = useState<VitalsSample | null>(null);
   const [connecting, setConnecting] = useState(false);
   const latestSubRef = useRef<(() => void) | undefined>(undefined);
+  const isMountedRef = useRef(true); // Track if component is mounted
+  const shouldAutoReconnectRef = useRef(false); // Track if auto-reconnect is desired
 
   const uid = auth.currentUser?.uid;
+
+  // Mark component as mounted/unmounted
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      console.log('[CONTEXT] LifeBandProvider unmounting, cleaning up...');
+    };
+  }, []);
 
   // Subscribe to latest vitals in Firestore to sync UI even if app restarts
   useEffect(() => {
     if (!uid) return;
     latestSubRef.current?.();
-    latestSubRef.current = subscribeToLatestVitals(uid, (sample) => setLatestVitals(sample));
+    latestSubRef.current = subscribeToLatestVitals(uid, (sample) => {
+      if (isMountedRef.current) {
+        setLatestVitals(sample);
+      }
+    });
     return () => latestSubRef.current?.();
   }, [uid]);
 
@@ -59,14 +74,28 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const handleVitals = useCallback(
     async (sample: VitalsSample) => {
-      console.log('[CONTEXT] Received vitals:', JSON.stringify(sample));
-      setLatestVitals(sample);
+      // Safety check: don't update state if component unmounted
+      if (!isMountedRef.current) {
+        console.log('[CONTEXT] Ignoring vitals - component unmounted');
+        return;
+      }
       
-      // Save to Firestore in background without blocking
-      if (uid) {
-        saveVitalsSample(uid, sample)
-          .then(() => console.log('[CONTEXT] Vitals saved'))
-          .catch((error) => console.warn('[CONTEXT] Save failed (non-critical):', error?.message || 'Unknown error'));
+      try {
+        console.log('[CONTEXT] Received vitals:', JSON.stringify(sample));
+        setLatestVitals(sample);
+        
+        // Save to Firestore in background without blocking
+        if (uid) {
+          saveVitalsSample(uid, sample)
+            .then(() => console.log('[CONTEXT] Vitals saved'))
+            .catch((error: any) => {
+              const errorMsg = error?.reason || error?.message || 'Unknown error';
+              console.warn('[CONTEXT] Save failed (non-critical):', errorMsg);
+            });
+        }
+      } catch (error: any) {
+        const errorMsg = error?.reason || error?.message || 'Unknown error';
+        console.error('[CONTEXT] handleVitals error:', errorMsg);
       }
     },
     [uid],
@@ -76,36 +105,116 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (lifeBandState.connectionState === 'connected' || connecting) {
       return;
     }
+    
+    if (!isMountedRef.current) {
+      console.log('[CONTEXT] Component unmounted, aborting connection');
+      return;
+    }
+    
     setConnecting(true);
-    await scanAndConnectToLifeBand(
-      (state) => {
-        setLifeBandState(state);
-        if (state.connectionState === 'connected' && state.device) {
-          persistDevice(state.device.id, state.device.name);
-        }
-      },
-      handleVitals,
-    );
-    setConnecting(false);
-  }, [handleVitals, persistDevice]);
+    shouldAutoReconnectRef.current = true; // Enable auto-reconnect for this connection
+    
+    try {
+      await scanAndConnectToLifeBand(
+        (state) => {
+          // Only update state if component is still mounted
+          if (isMountedRef.current) {
+            setLifeBandState(state);
+            if (state.connectionState === 'connected' && state.device) {
+              persistDevice(state.device.id, state.device.name);
+            }
+            // If disconnected, clear auto-reconnect flag
+            if (state.connectionState === 'disconnected') {
+              shouldAutoReconnectRef.current = false;
+            }
+          } else {
+            console.log('[CONTEXT] State update skipped - component unmounted');
+          }
+        },
+        handleVitals,
+      );
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'Connection failed';
+      console.error('[CONTEXT] Connect error:', errorMsg);
+      if (isMountedRef.current) {
+        setLifeBandState({ connectionState: 'disconnected', lastError: errorMsg });
+      }
+      shouldAutoReconnectRef.current = false; // Disable auto-reconnect on error
+    } finally {
+      if (isMountedRef.current) {
+        setConnecting(false);
+      }
+    }
+  }, [handleVitals, persistDevice, lifeBandState.connectionState, connecting]);
 
   const disconnect = useCallback(async () => {
-    await disconnectLifeBand();
-    setLifeBandState({ connectionState: 'disconnected' });
+    try {
+      shouldAutoReconnectRef.current = false; // Disable auto-reconnect when user disconnects
+      await disconnectLifeBand();
+      if (isMountedRef.current) {
+        setLifeBandState({ connectionState: 'disconnected' });
+      }
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'Disconnect failed';
+      console.error('[CONTEXT] Disconnect error:', errorMsg);
+    }
   }, []);
 
   const reconnectIfKnownDevice = useCallback(async () => {
-    const savedId = await AsyncStorage.getItem(DEVICE_KEY);
-    if (!savedId) return;
-    setConnecting(true);
-    await reconnectLifeBandById(
-      savedId,
-      (state) => {
-        setLifeBandState(state);
-      },
-      handleVitals,
-    );
-    setConnecting(false);
+    // Only reconnect if auto-reconnect is enabled and component is mounted
+    if (!shouldAutoReconnectRef.current) {
+      console.log('[CONTEXT] Auto-reconnect disabled, skipping');
+      return;
+    }
+    
+    if (!isMountedRef.current) {
+      console.log('[CONTEXT] Component unmounted, aborting reconnect');
+      return;
+    }
+    
+    try {
+      const savedId = await AsyncStorage.getItem(DEVICE_KEY);
+      if (!savedId) {
+        console.log('[CONTEXT] No saved device ID, skipping reconnect');
+        return;
+      }
+      
+      // Double-check auto-reconnect flag before proceeding
+      if (!shouldAutoReconnectRef.current) {
+        console.log('[CONTEXT] Auto-reconnect disabled during check, aborting');
+        return;
+      }
+      
+      setConnecting(true);
+      
+      await reconnectLifeBandById(
+        savedId,
+        (state) => {
+          // Only update state if component is still mounted
+          if (isMountedRef.current) {
+            setLifeBandState(state);
+            // If disconnected, clear auto-reconnect flag
+            if (state.connectionState === 'disconnected') {
+              shouldAutoReconnectRef.current = false;
+            }
+          } else {
+            console.log('[CONTEXT] State update skipped - component unmounted');
+          }
+        },
+        handleVitals,
+      );
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'Reconnect failed';
+      console.error('[CONTEXT] Reconnect error:', errorMsg);
+      if (isMountedRef.current) {
+        setLifeBandState({ connectionState: 'disconnected', lastError: errorMsg });
+      }
+      shouldAutoReconnectRef.current = false; // Disable auto-reconnect on error
+    } finally {
+      if (isMountedRef.current) {
+        setConnecting(false);
+      }
+    }
   }, [handleVitals]);
 
   const connectToDevice = useCallback(
@@ -113,18 +222,47 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (lifeBandState.connectionState === 'connected' || connecting) {
         return;
       }
+      
+      if (!isMountedRef.current) {
+        console.log('[CONTEXT] Component unmounted, aborting device connection');
+        return;
+      }
+      
       setConnecting(true);
-      await reconnectLifeBandById(
-        deviceId,
-        (state) => {
-          setLifeBandState(state);
-          if (state.connectionState === 'connected' && state.device) {
-            persistDevice(state.device.id, state.device.name);
-          }
-        },
-        handleVitals,
-      );
-      setConnecting(false);
+      shouldAutoReconnectRef.current = true; // Enable auto-reconnect for this connection
+      
+      try {
+        await reconnectLifeBandById(
+          deviceId,
+          (state) => {
+            // Only update state if component is still mounted
+            if (isMountedRef.current) {
+              setLifeBandState(state);
+              if (state.connectionState === 'connected' && state.device) {
+                persistDevice(state.device.id, state.device.name);
+              }
+              // If disconnected, clear auto-reconnect flag
+              if (state.connectionState === 'disconnected') {
+                shouldAutoReconnectRef.current = false;
+              }
+            } else {
+              console.log('[CONTEXT] State update skipped - component unmounted');
+            }
+          },
+          handleVitals,
+        );
+      } catch (error: any) {
+        const errorMsg = error?.reason || error?.message || 'Device connection failed';
+        console.error('[CONTEXT] Connect to device error:', errorMsg);
+        if (isMountedRef.current) {
+          setLifeBandState({ connectionState: 'disconnected', lastError: errorMsg });
+        }
+        shouldAutoReconnectRef.current = false; // Disable auto-reconnect on error
+      } finally {
+        if (isMountedRef.current) {
+          setConnecting(false);
+        }
+      }
     },
     [handleVitals, persistDevice, lifeBandState.connectionState, connecting],
   );
