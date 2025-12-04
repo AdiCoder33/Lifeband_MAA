@@ -16,7 +16,7 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
 
   const heroOpacity = useRef(new Animated.Value(0)).current;
   const heroTranslate = useRef(new Animated.Value(32)).current;
-  const pulseScale = useRef(new Animated.Value(2)).current;
+  const pulseScale = useRef(new Animated.Value(10)).current;
   const buttonScales = useMemo(() => [new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)], []);
 
   useEffect(() => {
@@ -55,13 +55,13 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
     const pulse = Animated.sequence([
       Animated.timing(pulseScale, {
         toValue: 1.05,
-        duration: 1200,
+        duration: 7000,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
       Animated.timing(pulseScale, {
         toValue: 1,
-        duration: 1200,
+        duration: 2000,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
