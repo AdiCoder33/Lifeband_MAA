@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../services/firebase';
 import { saveVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
@@ -32,6 +33,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const latestSubRef = useRef<(() => void) | undefined>(undefined);
   const isMountedRef = useRef(true); // Track if component is mounted
   const shouldAutoReconnectRef = useRef(false); // Track if auto-reconnect is desired
+  const reconnectAttemptRef = useRef(0); // Track reconnection attempts
+  const maxReconnectAttempts = 3; // Maximum auto-reconnect attempts
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Track reconnection timeout
 
   const uid = auth.currentUser?.uid;
 
@@ -40,6 +44,11 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      shouldAutoReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       console.log('[CONTEXT] LifeBandProvider unmounting, cleaning up...');
     };
   }, []);
@@ -113,6 +122,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     
     setConnecting(true);
     shouldAutoReconnectRef.current = true; // Enable auto-reconnect for this connection
+    reconnectAttemptRef.current = 0; // Reset reconnect attempts
     
     try {
       await scanAndConnectToLifeBand(
@@ -150,6 +160,11 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const disconnect = useCallback(async () => {
     try {
       shouldAutoReconnectRef.current = false; // Disable auto-reconnect when user disconnects
+      reconnectAttemptRef.current = 0; // Reset reconnect attempts
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       await disconnectLifeBand();
       if (isMountedRef.current) {
         setLifeBandState({ connectionState: 'disconnected' });
@@ -172,6 +187,22 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
     
+    // Check reconnection attempt limit
+    if (reconnectAttemptRef.current >= maxReconnectAttempts) {
+      console.log('[CONTEXT] Max reconnect attempts reached, stopping auto-reconnect');
+      shouldAutoReconnectRef.current = false;
+      reconnectAttemptRef.current = 0;
+      
+      if (isMountedRef.current) {
+        Alert.alert(
+          'LifeBand Disconnected',
+          'Unable to reconnect to your LifeBand. Please reconnect manually from the LifeBand screen.',
+          [{ text: 'OK' }]
+        );
+      }
+      return;
+    }
+    
     try {
       const savedId = await AsyncStorage.getItem(DEVICE_KEY);
       if (!savedId) {
@@ -185,6 +216,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
       
+      reconnectAttemptRef.current += 1;
+      console.log(`[CONTEXT] Auto-reconnect attempt ${reconnectAttemptRef.current}/${maxReconnectAttempts}`);
+      
       setConnecting(true);
       
       await reconnectLifeBandById(
@@ -193,6 +227,13 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           // Only update state if component is still mounted
           if (isMountedRef.current) {
             setLifeBandState(state);
+            
+            // If successfully connected, reset attempt counter
+            if (state.connectionState === 'connected') {
+              reconnectAttemptRef.current = 0;
+              console.log('[CONTEXT] Reconnect successful, reset attempt counter');
+            }
+            
             // If disconnected, clear auto-reconnect flag
             if (state.connectionState === 'disconnected') {
               shouldAutoReconnectRef.current = false;
@@ -203,19 +244,35 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         },
         handleVitals,
       );
+      
+      // If still mounted and connected successfully, reset attempts
+      if (isMountedRef.current && lifeBandState.connectionState === 'connected') {
+        reconnectAttemptRef.current = 0;
+      }
     } catch (error: any) {
       const errorMsg = error?.reason || error?.message || 'Reconnect failed';
       console.error('[CONTEXT] Reconnect error:', errorMsg);
+      
       if (isMountedRef.current) {
         setLifeBandState({ connectionState: 'disconnected', lastError: errorMsg });
+        
+        // If we've reached max attempts, show alert and stop
+        if (reconnectAttemptRef.current >= maxReconnectAttempts) {
+          shouldAutoReconnectRef.current = false;
+          reconnectAttemptRef.current = 0;
+          Alert.alert(
+            'LifeBand Disconnected',
+            'Unable to reconnect to your LifeBand. Please reconnect manually from the LifeBand screen.',
+            [{ text: 'OK' }]
+          );
+        }
       }
-      shouldAutoReconnectRef.current = false; // Disable auto-reconnect on error
     } finally {
       if (isMountedRef.current) {
         setConnecting(false);
       }
     }
-  }, [handleVitals]);
+  }, [handleVitals, lifeBandState.connectionState]);
 
   const connectToDevice = useCallback(
     async (deviceId: string) => {
@@ -230,6 +287,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       
       setConnecting(true);
       shouldAutoReconnectRef.current = true; // Enable auto-reconnect for this connection
+      reconnectAttemptRef.current = 0; // Reset reconnect attempts
       
       try {
         await reconnectLifeBandById(

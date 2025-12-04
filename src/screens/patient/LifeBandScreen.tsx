@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -15,10 +15,28 @@ const LifeBandScreen: React.FC<Props> = () => {
   const [devices, setDevices] = useState<BleDeviceInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [wasConnected, setWasConnected] = useState(false);
 
   useEffect(() => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
+
+  // Monitor connection status and show alert on unexpected disconnection
+  useEffect(() => {
+    if (lifeBandState.connectionState === 'connected') {
+      setWasConnected(true);
+    } else if (lifeBandState.connectionState === 'disconnected' && wasConnected) {
+      // Device was connected but now disconnected - show alert
+      Alert.alert(
+        'LifeBand Disconnected',
+        lifeBandState.lastError 
+          ? `Your LifeBand has been disconnected: ${lifeBandState.lastError}` 
+          : 'Your LifeBand has been disconnected. Please reconnect to continue monitoring.',
+        [{ text: 'OK' }]
+      );
+      setWasConnected(false);
+    }
+  }, [lifeBandState.connectionState, lifeBandState.lastError, wasConnected]);
 
   const status = lifeBandState.connectionState;
   const deviceName = lifeBandState.device?.name || lifeBandState.device?.id || 'Unknown device';

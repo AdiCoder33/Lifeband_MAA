@@ -372,15 +372,17 @@ export const scanAndConnectToLifeBand = async (
         // Clear device reference
         currentDevice = null;
         
-        // Safe state update
-        try {
-          onStateChange({ 
-            connectionState: 'disconnected', 
-            lastError: error ? 'Connection lost' : undefined 
-          });
-        } catch (stateError: any) {
-          console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
-        }
+        // Safe state update - wrap in setTimeout to prevent state update during render
+        setTimeout(() => {
+          try {
+            onStateChange({ 
+              connectionState: 'disconnected', 
+              lastError: error ? 'Connection lost' : undefined 
+            });
+          } catch (stateError: any) {
+            console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
+          }
+        }, 0);
       } catch (outerError: any) {
         // Catch-all to absolutely prevent crashes
         console.error('[BLE] Critical error in disconnect handler:', outerError?.message || outerError);
@@ -559,15 +561,17 @@ export const reconnectLifeBandById = async (
         // Clear device reference
         currentDevice = null;
         
-        // Safe state update
-        try {
-          onStateChange({ 
-            connectionState: 'disconnected', 
-            lastError: error ? 'Connection lost' : undefined 
-          });
-        } catch (stateError: any) {
-          console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
-        }
+        // Safe state update - wrap in setTimeout to prevent state update during render
+        setTimeout(() => {
+          try {
+            onStateChange({ 
+              connectionState: 'disconnected', 
+              lastError: error ? 'Connection lost' : undefined 
+            });
+          } catch (stateError: any) {
+            console.warn('[BLE] State update error in disconnect handler:', stateError?.message || stateError);
+          }
+        }, 0);
       } catch (outerError: any) {
         // Catch-all to absolutely prevent crashes
         console.error('[BLE] Critical error in disconnect handler:', outerError?.message || outerError);
