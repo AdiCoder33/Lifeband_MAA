@@ -1,5 +1,6 @@
 import * as Google from 'expo-auth-session/providers/google';
 import { AuthSessionResult } from 'expo-auth-session';
+import Constants from 'expo-constants';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -12,11 +13,16 @@ import {
 import { useCallback } from 'react';
 import { auth } from './firebase';
 
+const extra =
+  Constants?.expoConfig?.extra ?? (Constants?.manifest?.extra as Record<string, unknown> | undefined);
+const googleOAuthExtra = (extra?.googleOAuth ?? {}) as Record<string, string | undefined>;
+
 const googleConfig = {
-  expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || 'YOUR_EXPO_CLIENT_ID',
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  expoClientId:
+    process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || googleOAuthExtra.expoClientId || 'YOUR_EXPO_CLIENT_ID',
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || googleOAuthExtra.iosClientId,
+  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || googleOAuthExtra.androidClientId,
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || googleOAuthExtra.webClientId,
 };
 
 export const signUpWithEmail = async (name: string, email: string, password: string): Promise<User> => {

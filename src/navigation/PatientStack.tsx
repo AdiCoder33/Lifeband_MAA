@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { TouchableOpacity, Text } from 'react-native';
 import PatientDashboardScreen from '../screens/patient/PatientDashboardScreen';
 import LifeBandScreen from '../screens/patient/LifeBandScreen';
 import VitalsHistoryScreen from '../screens/patient/VitalsHistoryScreen';
@@ -18,6 +19,8 @@ type Props = {
 const Stack = createNativeStackNavigator<PatientStackParamList>();
 
 const PatientStack: React.FC<Props> = ({ profile }) => {
+  const [showGraphs, setShowGraphs] = React.useState(false);
+
   return (
     <Stack.Navigator>
       <Stack.Screen
@@ -27,7 +30,30 @@ const PatientStack: React.FC<Props> = ({ profile }) => {
         {(screenProps) => <PatientDashboardScreen {...screenProps} profile={profile} />}
       </Stack.Screen>
       <Stack.Screen name="LifeBand" component={LifeBandScreen} options={{ title: 'LifeBand' }} />
-      <Stack.Screen name="VitalsHistory" component={VitalsHistoryScreen} options={{ title: 'Vitals History' }} />
+      <Stack.Screen 
+        name="VitalsHistory" 
+        options={{
+          title: 'Vitals History',
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => setShowGraphs(!showGraphs)}
+              style={{
+                backgroundColor: showGraphs ? '#283593' : '#E0E0E0',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 20,
+                marginRight: 8,
+              }}
+            >
+              <Text style={{ color: showGraphs ? '#FFFFFF' : '#616161', fontSize: 20 }}>
+                {showGraphs ? '📋' : '📈'}
+              </Text>
+            </TouchableOpacity>
+          ),
+        }}
+      >
+        {(screenProps) => <VitalsHistoryScreen {...screenProps} showGraphs={showGraphs} />}
+      </Stack.Screen>
       <Stack.Screen name="LinkDoctor" component={LinkDoctorScreen} options={{ title: 'Link Doctor' }} />
       <Stack.Screen name="PatientAppointments" component={PatientAppointmentsScreen} options={{ title: 'Appointments' }} />
       <Stack.Screen
