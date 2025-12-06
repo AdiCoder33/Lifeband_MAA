@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Alert, StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -96,13 +96,25 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       headerRight: () => (
         <View style={styles.navActions}>
           <TouchableOpacity style={styles.navAction} onPress={handleDoctorIconPress}>
-            <Text style={styles.navIcon}>ðŸ©º</Text>
+            <Image 
+              source={require('../../../assets/DoctorExchangeNavbar.png')} 
+              style={styles.navDoctorImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
           <TouchableOpacity style={styles.navAction} onPress={() => navigation.navigate('LifeBand')}>
-            <Text style={styles.navIcon}>ðŸ“¡</Text>
+            <Image 
+              source={require('../../../assets/WatchNavbar.png')} 
+              style={styles.navImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.navAction, styles.navSignOutAction]} onPress={handleSignOut}>
-            <Text style={styles.navLabel}>Sign out</Text>
+          <TouchableOpacity style={styles.navSignOutAction} onPress={handleSignOut}>
+            <Image 
+              source={require('../../../assets/Logout.png')} 
+              style={styles.navLogoutImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
       ),
@@ -182,23 +194,74 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     timestamp: latestVitals?.timestamp,
   };
 
+  // Get IST time-based greeting
+  const getGreeting = () => {
+    const istTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const hour = new Date(istTime).getHours();
+    
+    if (hour >= 5 && hour < 12) {
+      return {
+        greeting: 'Good Morning',
+        subtitle: "Start your day with positivity for you and your baby.",
+        caption: "Track your morning vitals and plan your day ahead."
+      };
+    } else if (hour >= 12 && hour < 17) {
+      return {
+        greeting: 'Good Afternoon',
+        subtitle: "Hope you're having a wonderful day with your little one.",
+        caption: "Check your vitals and stay hydrated throughout the day."
+      };
+    } else if (hour >= 17 && hour < 21) {
+      return {
+        greeting: 'Good Evening',
+        subtitle: "Winding down? We're here for you and baby every moment.",
+        caption: "Review your day's vitals and prepare for a restful night."
+      };
+    } else {
+      return {
+        greeting: 'Good Night',
+        subtitle: "Rest well, Kanna. Tomorrow brings new joy for you both.",
+        caption: "Sweet dreams! Your wellness journey continues tomorrow."
+      };
+    }
+  };
+
+  const { greeting, subtitle, caption } = getGreeting();
+
   return (
-    <ScreenContainer scrollable>
-      <View style={styles.heroCard}>
+    <>
+      <ScreenContainer scrollable>
+        <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
-          <Text style={styles.heroTitle}>Hello, {patientProfile?.name || 'Super Mama'}!</Text>
-          <Text style={styles.heroSubtitle}>We're cheering for you and baby every step of the way.</Text>
-          <Text style={styles.heroCaption}>Track your journey, vitals, and upcoming visits below.</Text>
+          <Text style={styles.heroTitle}>{greeting}, {patientProfile?.name || 'Super Mama'}!</Text>
+          <Text style={styles.heroSubtitle}>{subtitle}</Text>
+          <Text style={styles.heroCaption}>{caption}</Text>
         </View>
         <View style={styles.heroBadge}>
-          <Text style={styles.heroIcon}>LB</Text>
+          {patientProfile?.photoURL ? (
+            <Image 
+              source={{ uri: patientProfile.photoURL }} 
+              style={styles.heroProfileImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <Image 
+              source={require('../../../assets/Patientprofile.jpg')} 
+              style={styles.heroProfileImage}
+              resizeMode="cover"
+            />
+          )}
         </View>
       </View>
 
       <View style={[styles.card, styles.cardJourney]}>
         <View style={styles.cardHeader}>
           <View style={styles.cardHeaderContent}>
-            <Text style={styles.cardEmoji}>PJ</Text>
+            <Image 
+              source={require('../../../assets/Pregnancy.png')} 
+              style={styles.cardPregnancyImage}
+              resizeMode="contain"
+            />
             <View style={styles.cardHeaderTextBlock}>
               <Text style={styles.cardTitle}>Pregnancy Journey</Text>
               <Text style={styles.cardSubtitle}>
@@ -294,18 +357,23 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       </TouchableOpacity>
 
       <View style={styles.bottomSpacer} />
-      <View style={styles.bottomDockWrapper} pointerEvents="box-none">
-        <View style={styles.bottomDock} />
-        <TouchableOpacity
-          style={styles.fab}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('MeditronChat')}
-        >
-          <Text style={styles.fabIcon}>💬</Text>
-          <Text style={styles.fabLabel}>AI Chat</Text>
-        </TouchableOpacity>
-      </View>
     </ScreenContainer>
+    
+    <View style={styles.bottomCardContainer}>
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('MeditronChat')}
+      >
+        <Image 
+          source={require('../../../assets/Chatbot.png')} 
+          style={styles.fabImage}
+          resizeMode="contain"
+        />
+        <Text style={styles.fabLabel}>AI Chat</Text>
+      </TouchableOpacity>
+    </View>
+    </>
   );
 };
 
@@ -359,6 +427,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  heroProfileImage: {
+    width: 64,
+    height: 74,
   },
   heroIcon: {
     fontSize: 28,
@@ -409,6 +482,11 @@ const styles = StyleSheet.create({
   },
   cardEmoji: {
     fontSize: 22,
+  },
+  cardPregnancyImage: {
+    width: 32,
+    height: 32,
+    transform: [{ scale: 4.8}],  // adjust zoom as needed
   },
   cardCopy: {
     color: colors.textSecondary,
@@ -519,44 +597,41 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   bottomSpacer: {
-    height: 140,
+    height: 80,
   },
-  bottomDockWrapper: {
+  bottomCardContainer: {
     position: 'absolute',
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: spacing.lg,
-    alignItems: 'center',
-  },
-  bottomDock: {
-    width: '70%',
     height: 70,
     backgroundColor: colors.white,
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
+    borderTopLeftRadius: 100,
+    borderTopRightRadius: 100,
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
   },
   fab: {
     position: 'absolute',
-    top: -24,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    top: -32,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowColor: '#ff0caeff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 12,
   },
   fabIcon: {
-    fontSize: 22,
+    fontSize: 28,
     color: colors.white,
   },
   fabLabel: {
@@ -572,27 +647,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingRight: spacing.md,
-    marginLeft: -spacing.xs,
+    paddingVertical: spacing.sm,
+    gap: spacing.md,
   },
   navAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: radii.md,
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    marginLeft: spacing.xs,
   },
   navIcon: {
-    fontSize: 18,
+    fontSize: 24,
   },
   navSignOutAction: {
-    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
   },
   navLabel: {
     color: colors.white,
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: typography.small,
+  },
+  navLogoutImage: {
+    width: 24,
+    height: 24,
+    transform: [{ scale: 1.8 }],  // adjust zoom as needed
+  },
+  fabImage: {
+  width: 46,
+  height: 36,
+  transform: [{ scale: 1.9 }],  // zoom 40%
+},
+  navImage: {
+    width: 24,
+    height: 24,
+    transform: [{ scale: 1.7 }],  // zoom 40%
+  },
+  navDoctorImage: {
+    width: 24,
+    height: 24,
+    transform: [{ scale: 2.2 }],  // adjust zoom as needed
   },
 });
 
