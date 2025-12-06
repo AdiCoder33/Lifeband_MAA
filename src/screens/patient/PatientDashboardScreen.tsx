@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
@@ -96,10 +96,10 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       headerRight: () => (
         <View style={styles.navActions}>
           <TouchableOpacity style={styles.navAction} onPress={handleDoctorIconPress}>
-            <Text style={styles.navIcon}>🩺</Text>
+            <Text style={styles.navIcon}>ðŸ©º</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navAction} onPress={() => navigation.navigate('LifeBand')}>
-            <Text style={styles.navIcon}>📡</Text>
+            <Text style={styles.navIcon}>ðŸ“¡</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.navAction, styles.navSignOutAction]} onPress={handleSignOut}>
             <Text style={styles.navLabel}>Sign out</Text>
@@ -138,16 +138,16 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const preg = calculatePregnancy(patientProfile?.patientData);
   const pregnancyWeek = preg?.currentWeek ?? null;
   const daysRemaining = preg?.daysRemaining ?? null;
-  const currentWeekLabel = pregnancyWeek !== null ? `${pregnancyWeek}` : '—';
+  const currentWeekLabel = pregnancyWeek !== null ? `${pregnancyWeek}` : 'â€”';
   const daysRemainingLabel =
-    daysRemaining !== null && daysRemaining !== undefined ? `${daysRemaining}` : '—';
+    daysRemaining !== null && daysRemaining !== undefined ? `${daysRemaining}` : 'â€”';
   const trimesterLabel = pregnancyWeek
     ? pregnancyWeek <= 13
       ? '1st Trimester'
       : pregnancyWeek <= 27
       ? '2nd Trimester'
       : '3rd Trimester'
-    : '—';
+    : 'â€”';
   const weightGainSample = '12.5';
 
   const statusLabel =
@@ -193,7 +193,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.heroCaption}>Track your journey, vitals, and upcoming visits below.</Text>
         </View>
         <View style={styles.heroBadge}>
-          <Text style={styles.heroIcon}>🤰</Text>
+          <Text style={styles.heroIcon}>LB</Text>
         </View>
       </View>
 
@@ -302,7 +302,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       <View style={[styles.card, styles.cardJourney]}>
         <View style={styles.cardHeader}>
           <View style={styles.cardHeaderContent}>
-            <Text style={styles.cardEmoji}>🤰</Text>
+            <Text style={styles.cardEmoji}>PJ</Text>
             <View style={styles.cardHeaderTextBlock}>
               <Text style={styles.cardTitle}>Pregnancy Journey</Text>
               <Text style={styles.cardSubtitle}>
@@ -365,6 +365,13 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
               <Text style={styles.vitalsPanelValueNull}>--/--</Text>
             )}
             <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
+          </View>
+          <View style={[styles.vitalsPanel, styles.vitalsPanelSoft]}>
+            <Text style={styles.vitalsPanelHeading}>HRV</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.hrv} ms</Text>
+            <View style={styles.vitalsDivider} />
+            <Text style={styles.vitalsPanelHeading}>Skin Temp</Text>
+            <Text style={styles.vitalsPanelValue}>{displayVitals.skinTemp} °C</Text>
           </View>
         </View>
         <View style={styles.statusRow}>
@@ -435,7 +442,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Appointments</Text>
-          <Text style={styles.cardEmoji}>📅</Text>
+          <Text style={styles.cardEmoji}>PJ</Text>
         </View>
         <Text style={styles.cardCopy}>Open your calendar to review upcoming visits and plan ahead.</Text>
         <Button
@@ -445,6 +452,19 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           style={styles.buttonSpace}
         />
       </TouchableOpacity>
+
+      <View style={styles.bottomSpacer} />
+      <View style={styles.bottomDockWrapper} pointerEvents="box-none">
+        <View style={styles.bottomDock} />
+        <TouchableOpacity
+          style={styles.fab}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('MeditronChat')}
+        >
+          <Text style={styles.fabIcon}>💬</Text>
+          <Text style={styles.fabLabel}>AI Chat</Text>
+        </TouchableOpacity>
+      </View>
     </ScreenContainer>
   );
 };
@@ -596,11 +616,12 @@ const styles = StyleSheet.create({
   },
   vitalsPanelRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginTop: spacing.md,
   },
   vitalsPanel: {
-    width: '48%',
+    width: '32%',
     backgroundColor: colors.white,
     borderRadius: radii.md,
     paddingVertical: spacing.md,
@@ -611,6 +632,10 @@ const styles = StyleSheet.create({
   vitalsPanelAccent: {
     backgroundColor: '#F1F3FF',
     borderColor: colors.secondary,
+  },
+  vitalsPanelSoft: {
+    backgroundColor: '#F4FBF8',
+    borderColor: 'rgba(77, 182, 172, 0.4)',
   },
   vitalsPanelHeading: {
     color: colors.textSecondary,
@@ -707,6 +732,53 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.small,
     marginTop: spacing.xs,
+  },
+  bottomSpacer: {
+    height: 140,
+  },
+  bottomDockWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: spacing.lg,
+    alignItems: 'center',
+  },
+  bottomDock: {
+    width: '70%',
+    height: 70,
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fab: {
+    position: 'absolute',
+    top: -24,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  fabIcon: {
+    fontSize: 22,
+    color: colors.white,
+  },
+  fabLabel: {
+    marginTop: 2,
+    fontSize: typography.small,
+    fontWeight: '700',
+    color: colors.white,
   },
   buttonSpace: {
     marginTop: spacing.sm,
@@ -861,3 +933,20 @@ const styles = StyleSheet.create({
 });
 
 export default PatientDashboardScreen;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -26,6 +26,7 @@ export type PatientStackParamList = {
   PatientAppointments: undefined;
   PatientAppointmentDetail: { appointmentId: string };
   AppointmentsCalendar: undefined;
+  MeditronChat: undefined;
 };
 
 export type DoctorStackParamList = {
