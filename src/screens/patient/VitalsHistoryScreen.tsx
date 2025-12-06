@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import { colors, spacing, typography, radii } from '../../theme/theme';
 import { auth } from '../../services/firebase';
@@ -11,6 +11,24 @@ import { VictoryAxis, VictoryChart, VictoryLegend, VictoryLine, VictoryScatter }
 type GroupedItem = {
   date: string;
   entries: VitalsSample[];
+  dayAverage: {
+    hr?: number;
+    spo2?: number;
+    bpSys?: number;
+    bpDia?: number;
+    hrv?: number;
+    score?: number;
+  };
+  hourlyAverages: {
+    hour: number;
+    hr?: number;
+    spo2?: number;
+    bpSys?: number;
+    bpDia?: number;
+    hrv?: number;
+    score?: number;
+    readingCount: number;
+  }[];
 };
 
 type MetricStatusTone = 'good' | 'warn' | 'critical' | 'idle';
@@ -48,10 +66,119 @@ const groupByDate = (samples: VitalsSample[]): GroupedItem[] => {
   });
   return Object.keys(map)
     .sort((a, b) => (a > b ? -1 : 1))
-    .map((date) => ({
-      date,
-      entries: map[date].sort((a, b) => ((a.timestamp ?? 0) > (b.timestamp ?? 0) ? -1 : 1)),
-    }));
+    .map((date) => {
+      const entries = map[date].sort((a, b) => ((a.timestamp ?? 0) > (b.timestamp ?? 0) ? -1 : 1));
+      
+      // Calculate day average
+      let hrSum = 0, hrCount = 0;
+      let spo2Sum = 0, spo2Count = 0;
+      let bpSysSum = 0, bpSysCount = 0;
+      let bpDiaSum = 0, bpDiaCount = 0;
+      let hrvSum = 0, hrvCount = 0;
+      let scoreSum = 0, scoreCount = 0;
+
+      entries.forEach(s => {
+        if (typeof s.hr === 'number' && !Number.isNaN(s.hr) && s.hr > 0) { hrSum += s.hr; hrCount++; }
+        if (typeof s.spo2 === 'number' && !Number.isNaN(s.spo2) && s.spo2 > 0) { spo2Sum += s.spo2; spo2Count++; }
+        if (typeof s.bp_sys === 'number' && !Number.isNaN(s.bp_sys) && s.bp_sys > 0) { bpSysSum += s.bp_sys; bpSysCount++; }
+        if (typeof s.bp_dia === 'number' && !Number.isNaN(s.bp_dia) && s.bp_dia > 0) { bpDiaSum += s.bp_dia; bpDiaCount++; }
+        if (typeof s.hrv === 'number' && !Number.isNaN(s.hrv) && s.hrv > 0) { hrvSum += s.hrv; hrvCount++; }
+        if (typeof s.maternal_health_score === 'number' && !Number.isNaN(s.maternal_health_score) && s.maternal_health_score > 0) { 
+          scoreSum += s.maternal_health_score; scoreCount++; 
+        }
+      });
+
+      // Calculate hourly averages
+      const hourlyMap: Record<number, {
+        hrSum: number; hrCount: number;
+        spo2Sum: number; spo2Count: number;
+        bpSysSum: number; bpSysCount: number;
+        bpDiaSum: number; bpDiaCount: number;
+        hrvSum: number; hrvCount: number;
+        scoreSum: number; scoreCount: number;
+        readingCountSum: number;
+      }> = {};
+
+      entries.forEach(s => {
+        const hour = toDate(s.timestamp).getHours();
+        if (!hourlyMap[hour]) {
+          hourlyMap[hour] = {
+            hrSum: 0, hrCount: 0,
+            spo2Sum: 0, spo2Count: 0,
+            bpSysSum: 0, bpSysCount: 0,
+            bpDiaSum: 0, bpDiaCount: 0,
+            hrvSum: 0, hrvCount: 0,
+            scoreSum: 0, scoreCount: 0,
+            readingCountSum: 0,
+          };
+        }
+        const bucket = hourlyMap[hour];
+        const readingContribution =
+          typeof s.sampleCount === 'number' && s.sampleCount > 0 ? s.sampleCount : 1;
+        bucket.readingCountSum += readingContribution;
+        if (typeof s.hr === 'number' && !Number.isNaN(s.hr) && s.hr > 0) { 
+          bucket.hrSum += s.hr; 
+          bucket.hrCount++; 
+        }
+        if (typeof s.spo2 === 'number' && !Number.isNaN(s.spo2) && s.spo2 > 0) { 
+          bucket.spo2Sum += s.spo2; 
+          bucket.spo2Count++; 
+        }
+        if (typeof s.bp_sys === 'number' && !Number.isNaN(s.bp_sys) && s.bp_sys > 0) { 
+          bucket.bpSysSum += s.bp_sys; 
+          bucket.bpSysCount++; 
+        }
+        if (typeof s.bp_dia === 'number' && !Number.isNaN(s.bp_dia) && s.bp_dia > 0) { 
+          bucket.bpDiaSum += s.bp_dia; 
+          bucket.bpDiaCount++; 
+        }
+        if (typeof s.hrv === 'number' && !Number.isNaN(s.hrv) && s.hrv > 0) { 
+          bucket.hrvSum += s.hrv; 
+          bucket.hrvCount++; 
+        }
+        if (typeof s.maternal_health_score === 'number' && !Number.isNaN(s.maternal_health_score) && s.maternal_health_score > 0) {
+          bucket.scoreSum += s.maternal_health_score; 
+          bucket.scoreCount++;
+        }
+      });
+
+      const hourlyAverages = Object.entries(hourlyMap)
+        .map(([hour, bucket]) => {
+          const avgData = {
+            hour: parseInt(hour),
+            hr: bucket.hrCount ? bucket.hrSum / bucket.hrCount : undefined,
+            spo2: bucket.spo2Count ? bucket.spo2Sum / bucket.spo2Count : undefined,
+            bpSys: bucket.bpSysCount ? bucket.bpSysSum / bucket.bpSysCount : undefined,
+            bpDia: bucket.bpDiaCount ? bucket.bpDiaSum / bucket.bpDiaCount : undefined,
+            hrv: bucket.hrvCount ? bucket.hrvSum / bucket.hrvCount : undefined,
+            score: bucket.scoreCount ? bucket.scoreSum / bucket.scoreCount : undefined,
+            readingCount:
+              bucket.readingCountSum || Math.max(bucket.hrCount, bucket.spo2Count, bucket.bpSysCount),
+          };
+          
+          // Debug logging
+          if (bucket.hrCount > 0) {
+            console.log(`[Hour ${hour}] ${bucket.hrCount} readings: HR avg = ${avgData.hr?.toFixed(1)}`);
+          }
+          
+          return avgData;
+        })
+        .sort((a, b) => a.hour - b.hour);
+
+      return {
+        date,
+        entries,
+        dayAverage: {
+          hr: hrCount ? hrSum / hrCount : undefined,
+          spo2: spo2Count ? spo2Sum / spo2Count : undefined,
+          bpSys: bpSysCount ? bpSysSum / bpSysCount : undefined,
+          bpDia: bpDiaCount ? bpDiaSum / bpDiaCount : undefined,
+          hrv: hrvCount ? hrvSum / hrvCount : undefined,
+          score: scoreCount ? scoreSum / scoreCount : undefined,
+        },
+        hourlyAverages,
+      };
+    });
 };
 
 const formatMetricValue = (value?: number, unit?: string, fractionDigits = 0) => {
@@ -110,17 +237,93 @@ const describeSampleWindow = (sample: VitalsSample) => {
   return 'Live capture';
 };
 
-const VitalsHistoryScreen: React.FC = () => {
+// Generate example data for demonstration
+const generateExampleData = (): VitalsSample[] => {
+  const now = Date.now();
+  const samples: VitalsSample[] = [];
+  
+  // Generate data for the last 3 days
+  for (let day = 0; day < 3; day++) {
+    const dayStart = now - (day * 24 * 60 * 60 * 1000);
+    
+    // Generate 3-5 readings per hour for certain hours
+    const hours = day === 0 ? [8, 10, 12, 14, 16, 18, 20] : [9, 12, 15, 18, 21];
+    
+    hours.forEach(hour => {
+      const readingsInHour = 3 + Math.floor(Math.random() * 3); // 3-5 readings
+      
+      for (let r = 0; r < readingsInHour; r++) {
+        const timestamp = dayStart - (24 - hour) * 60 * 60 * 1000 + (r * 15 * 60 * 1000);
+        
+        samples.push({
+          timestamp,
+          hr: 70 + Math.floor(Math.random() * 20), // 70-90
+          bp_sys: 115 + Math.floor(Math.random() * 15), // 115-130
+          bp_dia: 75 + Math.floor(Math.random() * 10), // 75-85
+          spo2: 96 + Math.floor(Math.random() * 4), // 96-100
+          hrv: 40 + Math.floor(Math.random() * 30), // 40-70
+          maternal_health_score: 75 + Math.floor(Math.random() * 20), // 75-95
+          rhythm: 'Normal',
+          anemia_risk: 'Low',
+          preeclampsia_risk: 'Low',
+        });
+      }
+    });
+  }
+  
+  return samples;
+};
+
+const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = false }) => {
   const [samples, setSamples] = useState<VitalsSample[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [timeFilter, setTimeFilter] = useState<'all' | 'week' | 'month'>('all');
+  const [hasRealData, setHasRealData] = useState(false);
 
   useEffect(() => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-    const unsub = subscribeToVitalsHistory(uid, setSamples, { maxEntries: 336 });
+    
+    setLoading(true);
+    
+    // Show example data immediately
+    setSamples(generateExampleData());
+    setLoading(false);
+    
+    const unsub = subscribeToVitalsHistory(uid, (newSamples) => {
+      if (newSamples.length > 0) {
+        // Prefer 30-minute aggregated snapshots so history is stable
+        const aggregatedOnly = newSamples.filter(
+          (sample) => sample.aggregated === true || typeof sample.bucketStart === 'number',
+        );
+        const filteredSamples = aggregatedOnly.length > 0 ? aggregatedOnly : newSamples;
+
+        if (aggregatedOnly.length === 0) {
+          console.log('[VitalsHistory] Falling back to raw samples - no aggregated data yet');
+        } else {
+          console.log(
+            `[VitalsHistory] Using ${filteredSamples.length} aggregated samples out of ${newSamples.length} total`,
+          );
+        }
+
+        setSamples(filteredSamples);
+        setHasRealData(true);
+      }
+      setLoading(false);
+    }, { maxEntries: 336 });
     return () => unsub();
   }, []);
 
   const dailyAverages = useMemo(() => {
+    // Determine how many days to show based on filter
+    let daysToShow = 5; // Default for 'all'
+    if (timeFilter === 'week') {
+      daysToShow = 7;
+    } else if (timeFilter === 'month') {
+      daysToShow = 30;
+    }
+    
     const buckets: Record<string, {
       date: Date;
       hrSum: number;
@@ -153,19 +356,19 @@ const VitalsHistoryScreen: React.FC = () => {
         };
       }
       const bucket = buckets[key];
-      if (typeof sample.hr === 'number' && !Number.isNaN(sample.hr)) {
+      if (typeof sample.hr === 'number' && !Number.isNaN(sample.hr) && sample.hr > 0) {
         bucket.hrSum += sample.hr;
         bucket.hrCount += 1;
       }
-      if (typeof sample.spo2 === 'number' && !Number.isNaN(sample.spo2)) {
+      if (typeof sample.spo2 === 'number' && !Number.isNaN(sample.spo2) && sample.spo2 > 0) {
         bucket.spo2Sum += sample.spo2;
         bucket.spo2Count += 1;
       }
-      if (typeof sample.bp_sys === 'number' && !Number.isNaN(sample.bp_sys)) {
+      if (typeof sample.bp_sys === 'number' && !Number.isNaN(sample.bp_sys) && sample.bp_sys > 0) {
         bucket.bpSysSum += sample.bp_sys;
         bucket.bpSysCount += 1;
       }
-      if (typeof sample.bp_dia === 'number' && !Number.isNaN(sample.bp_dia)) {
+      if (typeof sample.bp_dia === 'number' && !Number.isNaN(sample.bp_dia) && sample.bp_dia > 0) {
         bucket.bpDiaSum += sample.bp_dia;
         bucket.bpDiaCount += 1;
       }
@@ -181,8 +384,8 @@ const VitalsHistoryScreen: React.FC = () => {
         bpDiaAvg: bucket.bpDiaCount ? bucket.bpDiaSum / bucket.bpDiaCount : undefined,
       }))
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .slice(-DAILY_POINTS);
-  }, [samples]);
+      .slice(-daysToShow);
+  }, [samples, timeFilter]);
 
   const hrTrend = useMemo(
     () => dailyAverages.filter((d) => typeof d.hrAvg === 'number').map((d) => ({ x: d.date, y: d.hrAvg! })),
@@ -240,29 +443,91 @@ const VitalsHistoryScreen: React.FC = () => {
 
   const grouped = useMemo(() => groupByDate(samples), [samples]);
 
+  const filteredGrouped = useMemo(() => {
+    if (timeFilter === 'all') return grouped;
+    
+    const now = new Date();
+    const filterDate = new Date();
+    
+    if (timeFilter === 'week') {
+      filterDate.setDate(now.getDate() - 7);
+    } else if (timeFilter === 'month') {
+      filterDate.setMonth(now.getMonth() - 1);
+    }
+    
+    return grouped.filter(item => new Date(item.date) >= filterDate);
+  }, [grouped, timeFilter]);
+
   const trendHeader = useMemo(() => {
+    if (loading) {
+      return (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={colors.secondary} />
+          <Text style={styles.loaderText}>Loading vitals history...</Text>
+        </View>
+      );
+    }
+
     return (
-      <View style={styles.chartCard}>
-        <Text style={styles.title}>Daily Vitals Averages</Text>
+      <>
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={[styles.filterButton, timeFilter === 'all' && styles.filterButtonActive]}
+            onPress={() => setTimeFilter('all')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.filterButtonText, timeFilter === 'all' && styles.filterButtonTextActive]}>
+              All Time
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, timeFilter === 'week' && styles.filterButtonActive]}
+            onPress={() => setTimeFilter('week')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.filterButtonText, timeFilter === 'week' && styles.filterButtonTextActive]}>
+              Last Week
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, timeFilter === 'month' && styles.filterButtonActive]}
+            onPress={() => setTimeFilter('month')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.filterButtonText, timeFilter === 'month' && styles.filterButtonTextActive]}>
+              Last Month
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {showGraphs && (
+          <View style={styles.chartsContainer}>
+        <Text style={styles.title}>Vitals Trends</Text>
+        {!hasRealData && (
+          <View style={styles.exampleBadge}>
+            <Text style={styles.exampleBadgeText}>📊 Example Data - Connect your LifeBand for real readings</Text>
+          </View>
+        )}
         <Text style={styles.chartSubtitle}>
           {dailyAverages.length
-            ? `Showing the last ${dailyAverages.length} days`
+            ? `Last ${dailyAverages.length} day${dailyAverages.length > 1 ? 's' : ''}`
             : 'Connect your LifeBand to begin tracking.'}
         </Text>
+        
         <View style={styles.chartBlock}>
-          <Text style={styles.chartBlockTitle}>Heart Rate</Text>
+          <Text style={styles.chartBlockTitle}>Heart Rate (bpm)</Text>
           {hrTrend.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
-              height={180}
-              padding={{ top: 16, bottom: 40, left: 48, right: 24 }}
-              domainPadding={{ x: 25, y: 0 }}
+              height={140}
+              padding={{ top: 12, bottom: 32, left: 42, right: 16 }}
+              domainPadding={{ x: 20, y: 0 }}
               domain={{ y: [hrDomain.min, hrDomain.max] }}
             >
               <VictoryAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
                   grid: { stroke: 'transparent' },
                 }}
                 tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
@@ -270,36 +535,37 @@ const VitalsHistoryScreen: React.FC = () => {
               <VictoryAxis
                 dependentAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
-                  grid: { stroke: 'rgba(40, 53, 147, 0.08)' },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
+                  grid: { stroke: 'rgba(40, 53, 147, 0.05)', strokeDasharray: '3,3' },
                 }}
               />
               <VictoryLine
                 interpolation="monotoneX"
                 data={hrTrend}
-                style={{ data: { stroke: colors.secondary, strokeWidth: 3 } }}
+                style={{ data: { stroke: '#5C6BC0', strokeWidth: 2.5 } }}
               />
-              <VictoryScatter data={hrTrend} size={4} style={{ data: { fill: colors.secondary } }} />
+              <VictoryScatter data={hrTrend} size={3.5} style={{ data: { fill: '#5C6BC0' } }} />
             </VictoryChart>
           ) : (
-            <Text style={styles.chartEmpty}>Need at least two readings to draw this trend.</Text>
+            <Text style={styles.chartEmpty}>Need at least two readings</Text>
           )}
         </View>
+        
         <View style={styles.chartBlock}>
-          <Text style={styles.chartBlockTitle}>SpO₂</Text>
+          <Text style={styles.chartBlockTitle}>Oxygen Saturation (%)</Text>
           {spo2Trend.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
-              height={160}
-              padding={{ top: 16, bottom: 40, left: 48, right: 24 }}
-              domainPadding={{ x: 25, y: 0 }}
+              height={140}
+              padding={{ top: 12, bottom: 32, left: 42, right: 16 }}
+              domainPadding={{ x: 20, y: 0 }}
               domain={{ y: [spo2Domain.min, spo2Domain.max] }}
             >
               <VictoryAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
                   grid: { stroke: 'transparent' },
                 }}
                 tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
@@ -307,36 +573,37 @@ const VitalsHistoryScreen: React.FC = () => {
               <VictoryAxis
                 dependentAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
-                  grid: { stroke: 'rgba(77, 182, 172, 0.2)' },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
+                  grid: { stroke: 'rgba(77, 182, 172, 0.08)', strokeDasharray: '3,3' },
                 }}
               />
               <VictoryLine
                 interpolation="monotoneX"
                 data={spo2Trend}
-                style={{ data: { stroke: colors.accent, strokeWidth: 3 } }}
+                style={{ data: { stroke: '#26A69A', strokeWidth: 2.5 } }}
               />
-              <VictoryScatter data={spo2Trend} size={4} style={{ data: { fill: colors.accent } }} />
+              <VictoryScatter data={spo2Trend} size={3.5} style={{ data: { fill: '#26A69A' } }} />
             </VictoryChart>
           ) : (
-            <Text style={styles.chartEmpty}>SpO₂ readings will appear here once available.</Text>
+            <Text style={styles.chartEmpty}>SpO₂ readings will appear here</Text>
           )}
         </View>
+        
         <View style={styles.chartBlock}>
-          <Text style={styles.chartBlockTitle}>Blood Pressure</Text>
+          <Text style={styles.chartBlockTitle}>Blood Pressure (mmHg)</Text>
           {bpTrends.sys.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
-              height={190}
-              padding={{ top: 24, bottom: 44, left: 48, right: 24 }}
-              domainPadding={{ x: 25, y: 0 }}
+              height={150}
+              padding={{ top: 20, bottom: 36, left: 42, right: 16 }}
+              domainPadding={{ x: 20, y: 0 }}
               domain={{ y: [bpDomain.min, bpDomain.max] }}
             >
               <VictoryAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
                   grid: { stroke: 'transparent' },
                 }}
                 tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
@@ -344,107 +611,154 @@ const VitalsHistoryScreen: React.FC = () => {
               <VictoryAxis
                 dependentAxis
                 style={{
-                  axis: { stroke: '#E0E0E0' },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
-                  grid: { stroke: 'rgba(40, 53, 147, 0.08)' },
+                  axis: { stroke: colors.border },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
+                  grid: { stroke: 'rgba(40, 53, 147, 0.05)', strokeDasharray: '3,3' },
                 }}
               />
               <VictoryLegend
-                x={48}
+                x={42}
                 y={2}
                 orientation="horizontal"
-                gutter={16}
+                gutter={14}
                 data={[
-                  { name: 'Systolic', symbol: { fill: colors.secondary } },
-                  { name: 'Diastolic', symbol: { fill: colors.accent } },
+                  { name: 'Systolic', symbol: { fill: '#EF5350', type: 'circle' } },
+                  { name: 'Diastolic', symbol: { fill: '#66BB6A', type: 'circle' } },
                 ]}
-                style={{ labels: { fill: colors.textSecondary, fontSize: 12 } }}
+                style={{ labels: { fill: colors.textSecondary, fontSize: 10 } }}
               />
               <VictoryLine
                 interpolation="monotoneX"
                 data={bpTrends.sys}
-                style={{ data: { stroke: colors.secondary, strokeWidth: 3 } }}
+                style={{ data: { stroke: '#EF5350', strokeWidth: 2.5 } }}
               />
-              <VictoryScatter data={bpTrends.sys} size={4} style={{ data: { fill: colors.secondary } }} />
+              <VictoryScatter data={bpTrends.sys} size={3.5} style={{ data: { fill: '#EF5350' } }} />
               <VictoryLine
                 interpolation="monotoneX"
                 data={bpTrends.dia}
-                style={{ data: { stroke: colors.accent, strokeWidth: 3 } }}
+                style={{ data: { stroke: '#66BB6A', strokeWidth: 2.5 } }}
               />
-              <VictoryScatter data={bpTrends.dia} size={4} style={{ data: { fill: colors.accent } }} />
+              <VictoryScatter data={bpTrends.dia} size={3.5} style={{ data: { fill: '#66BB6A' } }} />
             </VictoryChart>
           ) : (
-            <Text style={styles.chartEmpty}>Blood pressure trends will populate as readings stream in.</Text>
+            <Text style={styles.chartEmpty}>Blood pressure trends will populate</Text>
           )}
         </View>
       </View>
+        )}
+      </>
     );
-  }, [dailyAverages.length, hrTrend, spo2Trend, bpTrends, hrDomain, spo2Domain, bpDomain]);
+  }, [loading, dailyAverages.length, hrTrend, spo2Trend, bpTrends, hrDomain, spo2Domain, bpDomain, timeFilter, showGraphs, hasRealData]);
 
   const headerComponent = useMemo(() => trendHeader, [trendHeader]);
 
   return (
     <ScreenContainer>
       <FlatList
-        data={grouped}
+        data={filteredGrouped}
         keyExtractor={(item) => item.date}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={headerComponent}
-        renderItem={({ item }) => (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{format(new Date(item.date), 'MMMM d, yyyy')}</Text>
-            {item.entries.map((s, idx) => {
-              const ts = toDate(s.timestamp);
-              const badges = getSampleBadges(s);
-              const windowLabel = describeSampleWindow(s);
-              return (
-                <View key={`${item.date}-${idx}`} style={[styles.row, idx === item.entries.length - 1 && styles.rowLast]}>
-                  <View style={styles.rowLeft}>
-                    <Text style={styles.time}>{format(ts, 'HH:mm')}</Text>
-                    <Text style={styles.meta}>HR {formatMetricValue(s.hr, 'bpm')}</Text>
-                    <Text style={styles.meta}>{windowLabel}</Text>
-                    {badges.length > 0 && (
-                      <View style={styles.badgeRow}>
-                        {badges.map((badge, badgeIdx) => (
-                          <View
-                            key={`${item.date}-${idx}-badge-${badgeIdx}`}
-                            style={[styles.badge, { backgroundColor: STATUS_COLORS[badge.tone].bg }]}
-                          >
-                            <Text style={[styles.badgeText, { color: STATUS_COLORS[badge.tone].text }]}>{badge.label}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+        renderItem={({ item }) => {
+          const isExpanded = expandedDay === item.date;
+          return (
+            <View style={styles.section}>
+              <TouchableOpacity 
+                onPress={() => setExpandedDay(isExpanded ? null : item.date)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.dayHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>{format(new Date(item.date), 'MMMM d, yyyy')}</Text>
+                    <Text style={styles.daySubtitle}>{item.entries.length} reading{item.entries.length !== 1 ? 's' : ''}</Text>
                   </View>
-                  <View style={styles.metrics}>
-                    <View style={styles.metricItem}>
-                      <Text style={styles.metricLabel}>BP</Text>
-                      <Text style={styles.metricValue}>{formatBloodPressure(s.bp_sys, s.bp_dia)}</Text>
+                  <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+                </View>
+              </TouchableOpacity>
+
+              {!isExpanded && (
+                <View style={styles.dayAverageContainer}>
+                  <Text style={styles.averageLabel}>Day Average</Text>
+                  <View style={styles.metricsGrid}>
+                    <View style={styles.metricRow}>
+                      <View style={styles.metricBox}>
+                        <Text style={styles.metricLabel}>HR</Text>
+                        <Text style={styles.metricValue}>{formatMetricValue(item.dayAverage.hr, 'bpm')}</Text>
+                      </View>
+                      <View style={styles.metricBox}>
+                        <Text style={styles.metricLabel}>BP</Text>
+                        <Text style={styles.metricValue}>{formatBloodPressure(item.dayAverage.bpSys, item.dayAverage.bpDia)}</Text>
+                      </View>
+                      {typeof item.dayAverage.spo2 === 'number' && (
+                        <View style={styles.metricBox}>
+                          <Text style={styles.metricLabel}>SpO₂</Text>
+                          <Text style={styles.metricValue}>{formatMetricValue(item.dayAverage.spo2, '%')}</Text>
+                        </View>
+                      )}
                     </View>
-                    {typeof s.spo2 === 'number' && (
-                      <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>SpO₂</Text>
-                        <Text style={styles.metricValue}>{formatMetricValue(s.spo2, '%')}</Text>
-                      </View>
-                    )}
-                    {typeof s.hrv === 'number' && (
-                      <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>HRV</Text>
-                        <Text style={styles.metricValue}>{formatMetricValue(s.hrv, 'ms')}</Text>
-                      </View>
-                    )}
-                    {typeof s.maternal_health_score === 'number' && (
-                      <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>Score</Text>
-                        <Text style={styles.metricValue}>{formatMetricValue(s.maternal_health_score)}</Text>
-                      </View>
-                    )}
+                    <View style={styles.metricRow}>
+                      {typeof item.dayAverage.hrv === 'number' && (
+                        <View style={styles.metricBox}>
+                          <Text style={styles.metricLabel}>HRV</Text>
+                          <Text style={styles.metricValue}>{formatMetricValue(item.dayAverage.hrv, 'ms')}</Text>
+                        </View>
+                      )}
+                      {typeof item.dayAverage.score === 'number' && (
+                        <View style={styles.metricBox}>
+                          <Text style={styles.metricLabel}>Score</Text>
+                          <Text style={styles.metricValue}>{formatMetricValue(item.dayAverage.score)}</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
-              );
-            })}
-          </View>
-        )}
+              )}
+
+              {isExpanded && (
+                <View style={styles.hourlyContainer}>
+                  <Text style={styles.averageLabel}>Hourly Averages</Text>
+                  {item.hourlyAverages.map((hourData) => (
+                    <View key={`${item.date}-hour-${hourData.hour}`} style={styles.hourRow}>
+                      <View style={styles.hourLeft}>
+                        <Text style={styles.hourTime}>{`${hourData.hour.toString().padStart(2, '0')}:00`}</Text>
+                        <Text style={styles.hourMeta}>HR {formatMetricValue(hourData.hr, 'bpm')}</Text>
+                        <Text style={styles.hourCount}>Avg of {hourData.readingCount} reading{hourData.readingCount !== 1 ? 's' : ''}</Text>
+                      </View>
+                      <View style={styles.metricsGrid}>
+                        <View style={styles.metricRow}>
+                          <View style={styles.metricBox}>
+                            <Text style={styles.metricLabel}>BP</Text>
+                            <Text style={styles.metricValue}>{formatBloodPressure(hourData.bpSys, hourData.bpDia)}</Text>
+                          </View>
+                          {typeof hourData.spo2 === 'number' && (
+                            <View style={styles.metricBox}>
+                              <Text style={styles.metricLabel}>SpO₂</Text>
+                              <Text style={styles.metricValue}>{formatMetricValue(hourData.spo2, '%')}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.metricRow}>
+                          {typeof hourData.hrv === 'number' && (
+                            <View style={styles.metricBox}>
+                              <Text style={styles.metricLabel}>HRV</Text>
+                              <Text style={styles.metricValue}>{formatMetricValue(hourData.hrv, 'ms')}</Text>
+                            </View>
+                          )}
+                          {typeof hourData.score === 'number' && (
+                            <View style={styles.metricBox}>
+                              <Text style={styles.metricLabel}>Score</Text>
+                              <Text style={styles.metricValue}>{formatMetricValue(hourData.score)}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        }}
         ListEmptyComponent={<Text style={styles.empty}>No vitals yet. Connect your LifeBand to start tracking.</Text>}
       />
     </ScreenContainer>
@@ -461,57 +775,174 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: spacing.lg,
   },
-  chartCard: {
-    backgroundColor: colors.card,
+  loaderContainer: {
+    paddingVertical: spacing.xl * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loaderText: {
+    marginTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: typography.body,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
+  },
+  filterButtonText: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  filterButtonTextActive: {
+    color: colors.white,
+  },
+  chartsContainer: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+  },
+  exampleBadge: {
+    backgroundColor: 'rgba(229, 115, 115, 0.1)',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.sm,
+    marginBottom: spacing.sm,
+  },
+  exampleBadgeText: {
+    color: colors.primary,
+    fontSize: typography.small - 1,
+    fontWeight: '600',
   },
   chartSubtitle: {
     color: colors.textSecondary,
+    fontSize: typography.small,
     marginBottom: spacing.md,
   },
   chartBlock: {
     marginBottom: spacing.md,
-    padding: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.border || '#ECEFF1',
-    backgroundColor: colors.background,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
   },
   chartBlockTitle: {
-    fontWeight: '700',
+    fontWeight: '600',
+    fontSize: typography.small,
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
   },
   chartEmpty: {
     color: colors.textSecondary,
-    fontSize: typography.small,
+    fontSize: typography.small - 1,
+    fontStyle: 'italic',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
   section: {
     backgroundColor: colors.card,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
-    padding: spacing.lg,
+    padding: spacing.md,
     borderRadius: radii.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
   },
   sectionTitle: {
     fontWeight: '700',
+    fontSize: typography.body,
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+  },
+  daySubtitle: {
+    fontSize: typography.small - 1,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  expandIcon: {
+    fontSize: 14,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
+  dayAverageContainer: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  averageLabel: {
+    fontSize: typography.small - 1,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  hourlyContainer: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  hourRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  hourLeft: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  hourTime: {
+    fontWeight: '700',
+    fontSize: typography.body - 1,
+    color: colors.secondary,
+    marginBottom: 2,
+  },
+  hourMeta: {
+    color: colors.textSecondary,
+    fontSize: typography.small - 1,
+  },
+  hourCount: {
+    color: colors.textSecondary,
+    fontSize: typography.small - 2,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E0E0E0',
+    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
   },
   rowLast: {
     borderBottomWidth: 0,
@@ -519,15 +950,18 @@ const styles = StyleSheet.create({
   },
   rowLeft: {
     flex: 1,
-    paddingRight: spacing.md,
+    paddingRight: spacing.sm,
   },
   time: {
     fontWeight: '700',
+    fontSize: typography.body,
     color: colors.textPrimary,
+    marginBottom: 2,
   },
   meta: {
     color: colors.textSecondary,
-    fontSize: typography.small,
+    fontSize: typography.small - 1,
+    marginBottom: 1,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -544,26 +978,37 @@ const styles = StyleSheet.create({
     fontSize: typography.small - 2,
     fontWeight: '600',
   },
-  metrics: {
-    alignItems: 'flex-end',
+  metricsGrid: {
     gap: spacing.xs,
   },
-  metricItem: {
-    alignItems: 'flex-end',
+  metricRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  metricBox: {
+    backgroundColor: 'rgba(40, 53, 147, 0.04)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.sm,
+    minWidth: 68,
+    alignItems: 'center',
   },
   metricLabel: {
-    fontSize: typography.small - 2,
+    fontSize: typography.small - 3,
     color: colors.textSecondary,
+    fontWeight: '500',
+    marginBottom: 1,
   },
   metricValue: {
     fontSize: typography.small,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    fontWeight: '700',
+    color: colors.secondary,
   },
   empty: {
     textAlign: 'center',
     color: colors.textSecondary,
-    padding: spacing.lg,
+    padding: spacing.xl,
+    fontSize: typography.body,
   },
 });
 
