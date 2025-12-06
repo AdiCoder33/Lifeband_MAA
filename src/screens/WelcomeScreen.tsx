@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import GLModel from '../components/GLModel';
 import ScreenContainer from '../components/ScreenContainer';
 import { AuthStackParamList } from '../types/navigation';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -15,7 +16,7 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
 
   const heroOpacity = useRef(new Animated.Value(0)).current;
   const heroTranslate = useRef(new Animated.Value(32)).current;
-  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseScale = useRef(new Animated.Value(10)).current;
   const buttonScales = useMemo(() => [new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)], []);
 
   useEffect(() => {
@@ -54,13 +55,13 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
     const pulse = Animated.sequence([
       Animated.timing(pulseScale, {
         toValue: 1.05,
-        duration: 1200,
+        duration: 20000,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
       Animated.timing(pulseScale, {
         toValue: 1,
-        duration: 1200,
+        duration: 1500,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
@@ -126,19 +127,23 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
         >
           <Animated.View style={[styles.logoAura, { transform: [{ scale: pulseScale }] }]} />
           <View style={styles.logoHero}>
-            <Text style={styles.heroInitial}>LB</Text>
+            <Image
+              source={require('../../assets/Welcomeimage.png')}
+              style={styles.logoImage}
+              resizeMode="cover"
+              accessible
+              accessibilityLabel="LifeBand logo"
+            />
           </View>
           <Text style={styles.appName}>LifeBand MAA</Text>
-          <Text style={styles.tagline}>Personalised prenatal care. Smarter doctor collaboration.</Text>
+          <Text style={styles.tagline}>Connecting Hearts, Protecting Lives</Text>
         </Animated.View>
 
-        <Animated.Image
-          style={[styles.illustration, { transform: [{ translateY: heroTranslate }] }]}
-          source={require('../../assets/welcome-illustration.jpg')}
-          resizeMode="contain"
-        />
+        <Animated.View style={[styles.illustration, { transform: [{ translateY: heroTranslate }] }]}>
+          <GLModel style={styles.model} />
+        </Animated.View>
         <View style={styles.carouselDots}>
-          {[0, 1, 2].map((i) => (
+          {[0].map((i) => (
             <View key={i} style={[styles.carouselDot, i === 0 && styles.carouselDotActive]} />
           ))}
         </View>
@@ -187,6 +192,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 8,
   },
+  logoImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+  },
   heroInitial: {
     color: colors.white,
     fontSize: typography.heading + 8,
@@ -209,6 +219,12 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     marginTop: spacing.md,
+  },
+  model: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radii.lg,
+    overflow: 'hidden',
   },
   carouselDots: {
     flexDirection: 'row',

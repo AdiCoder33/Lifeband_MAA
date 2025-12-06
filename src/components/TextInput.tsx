@@ -7,12 +7,12 @@ type Props = TextInputProps & {
   error?: string;
 };
 
-const TextInput: React.FC<Props> = ({ label, error, ...rest }) => {
+const TextInput: React.FC<Props> = ({ label, error, style, ...rest }) => {
   return (
     <View style={styles.wrapper}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <RNTextInput
-        style={[styles.input, error && styles.inputError]}
+        style={[styles.input, style, error && styles.inputError]}
         placeholderTextColor={colors.textSecondary}
         {...rest}
       />

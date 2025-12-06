@@ -36,7 +36,8 @@
     },
     "plugins": [
       "expo-camera",
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
