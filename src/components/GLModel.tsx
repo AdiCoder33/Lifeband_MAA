@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Image, PanResponder, StyleProp, ViewStyle } from 'react-native';
 import { Asset } from 'expo-asset';
-import { File } from 'expo-file-system';
 import type { ExpoWebGLRenderingContext } from 'expo-gl';
 
 type Props = {
@@ -23,9 +22,9 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 		);
 	}
 
-	const { GLView, THREE, GLTFLoader, modelAsset } = deps;
+	const { GLView, THREE, loadAsync, modelAsset } = deps;
 	const frameRef = useRef<number | null>(null);
-	const rootRef = useRef<THREE.Object3D | null>(null);
+	const rootRef = useRef<any>(null);
 	const interactionRef = useRef({
 		isInteracting: false,
 		baseRotationX: 0,
@@ -55,7 +54,6 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 					}
 					const nextY = interactionRef.current.baseRotationY + gestureState.dx * rotationFactor;
 					const nextX = interactionRef.current.baseRotationX - gestureState.dy * rotationFactor;
-
 					root.rotation.y = nextY;
 					root.rotation.x = clamp(nextX, -Math.PI / 4, Math.PI / 4);
 				},
@@ -73,15 +71,6 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 			}),
 		[]
 	);
-
-	useEffect(() => {
-		return () => {
-			if (frameRef.current) {
-				cancelAnimationFrame(frameRef.current);
-			}
-			rootRef.current = null;
-		};
-	}, []);
 
 	const onContextCreate = async (gl: ExpoWebGLRenderingContext) => {
 		const { drawingBufferWidth: width, drawingBufferHeight: height } = gl;
@@ -110,17 +99,56 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 		const asset = Asset.fromModule(modelAsset);
 		await asset.downloadAsync();
 
-		const loader = new GLTFLoader();
-
 		try {
-			const modelBuffer = await loadModelArrayBuffer(asset);
-			const gltf = await parseGLTFAsync(
-				loader,
-				modelBuffer,
-				asset.localUri ?? asset.uri ?? ''
-			);
-			const root = gltf.scene;
-			rootRef.current = root;
+			// Suppress console errors during texture loading
+			const originalError = console.error;
+			console.error = (...args: any[]) => {
+				// Filter out texture loading errors
+				const msg = args.join(' ');
+				if (msg.includes('GLTFLoader') || msg.includes('Couldn\'t load texture') || msg.includes('ArrayBuffer')) {
+					return; // Suppress
+				}
+				originalError(...args);
+			};
+
+			let root: any;
+			try {
+				console.log('[GLModel] Loading model with ExpoTHREE.loadAsync...');
+				
+				// Load the model - textures will fail but geometry will load
+				const loaded = await loadAsync(modelAsset);
+				
+				// If it's a GLTF result, extract the scene
+				root = loaded.scene || loaded;
+				
+				// IMMEDIATELY remove all textures
+				root.traverse((child: any) => {
+					if (child.isMesh && child.material) {
+						const materials = Array.isArray(child.material) ? child.material : [child.material];
+						materials.forEach((mat: any) => {
+							if (mat) {
+								// Dispose and remove all texture references
+								['map', 'aoMap', 'emissiveMap', 'metalnessMap', 'roughnessMap', 'normalMap', 'bumpMap', 'alphaMap'].forEach(prop => {
+									if (mat[prop]) {
+										try { mat[prop].dispose(); } catch (e) {}
+										mat[prop] = null;
+									}
+								});
+							}
+						});
+					}
+				});
+				
+				console.log('[GLModel] Model loaded, textures removed');
+				rootRef.current = root;
+			} finally {
+				// Restore console.error
+				console.error = originalError;
+			}
+
+			if (!root) {
+				throw new Error('Failed to extract model from loaded asset');
+			}
 
 			const box = new THREE.Box3().setFromObject(root);
 			const size = new THREE.Vector3();
@@ -135,24 +163,47 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 			root.position.sub(center.multiplyScalar(scale));
 			root.position.y -= 0.08;
 
-			const skinColor = new THREE.Color('#FFC9A9');
-			root.traverse(child => {
-				if ((child as any).isMesh) {
-					const mesh = child as THREE.Mesh;
-					const material = mesh.material as any;
-					if (material?.map) {
-						material.map.encoding = THREE.sRGBEncoding;
-					}
-					material.toneMapped = true;
-					if (Array.isArray(material)) {
-						material.forEach(entry => {
-							if (entry?.color) {
-								entry.color.copy(skinColor);
+			// Apply heuristic colors (no textures - they cause issues in RN)
+			root.traverse((child: any) => {
+				if (child.isMesh) {
+					const mesh: any = child;
+					const material: any = mesh.material;
+
+					const applyToMaterial = (mat: any) => {
+						if (!mat) return;
+						
+						// Remove all textures to avoid ArrayBuffer/Blob errors
+						const textureProps = ['map', 'aoMap', 'emissiveMap', 'metalnessMap', 'roughnessMap', 'normalMap', 'bumpMap', 'alphaMap'];
+						textureProps.forEach((prop) => {
+							if (mat[prop]) {
+								mat[prop] = null;
 							}
 						});
-					} else if (material?.color) {
-						material.color.copy(skinColor);
-					}
+
+						// Heuristic coloring based on mesh name
+						const name = (mesh.name || '').toLowerCase();
+						let chosen: string | null = null;
+						if (name.includes('hair') || name.includes('head')) chosen = '#0b0b0b';
+						else if (name.includes('cloth') || name.includes('robe') || name.includes('dress') || name.includes('shirt') || name.includes('saree')) chosen = '#D8342A';
+						else if (name.includes('skin') || name.includes('body') || name.includes('face') || name.includes('baby')) chosen = '#FFC9A9';
+						else if (name.includes('base') || name.includes('pedestal') || name.includes('stand')) chosen = '#F6D7B0';
+
+						if (!chosen && mat?.color) {
+							try { chosen = mat.color?.getHexString ? `#${mat.color.getHexString()}` : '#FFC9A9'; } catch { chosen = '#FFC9A9'; }
+						}
+
+						if (chosen && mat?.color) {
+							try { mat.color.set(chosen); } catch {}
+						}
+
+						if (typeof mat.roughness !== 'undefined') mat.roughness = 0.6;
+						if (typeof mat.metalness !== 'undefined') mat.metalness = 0.0;
+						mat.toneMapped = true;
+						mat.needsUpdate = true;
+					};
+
+					if (Array.isArray(material)) material.forEach((m: any) => applyToMaterial(m));
+					else applyToMaterial(material);
 				}
 			});
 
@@ -186,8 +237,8 @@ export default GLModel;
 
 type GLDependencies = {
 	GLView: typeof import('expo-gl').GLView;
-	THREE: typeof import('three');
-	GLTFLoader: typeof import('three/examples/jsm/loaders/GLTFLoader.js').GLTFLoader;
+	THREE: any;
+	loadAsync: any;
 	modelAsset: ReturnType<typeof require>;
 };
 
@@ -200,17 +251,20 @@ function getGLDependencies(): GLDependencies | null {
 
 	try {
 		const { GLView } = require('expo-gl');
+		const ExpoTHREE = require('expo-three');
+		
+		// Use THREE from three.js directly (expo-three works with it)
 		const THREE = require('three');
-		const { GLTFLoader } = require('three/examples/jsm/loaders/GLTFLoader.js');
 
-		const modelAsset = require('../../assets/motherchild3dmodel.glb');
+		// Use the provided model filename. Make sure you add the GLB to `assets/`.
+		const modelAsset = require('../../assets/motherbaby.glb');
 
-		cachedDeps = { GLView, THREE, GLTFLoader, modelAsset };
+		cachedDeps = { GLView, THREE, loadAsync: ExpoTHREE.loadAsync, modelAsset };
 		return cachedDeps;
 	} catch (error) {
 		cachedDeps = null;
 		console.warn(
-			'[GLModel] expo-gl unavailable – falling back to static artwork. Install a development build (npx expo run:android) to enable the 3D model.',
+			'[GLModel] expo-gl/expo-three unavailable – falling back to static artwork. Install a development build (npx expo run:android) to enable the 3D model.',
 			error
 		);
 		return null;
@@ -232,36 +286,9 @@ function createRenderer(gl: ExpoWebGLRenderingContext, THREE: typeof import('thr
 	});
 
 	renderer.setPixelRatio(1);
-	if (THREE.ColorManagement) {
-		THREE.ColorManagement.legacyMode = false;
-	}
-	renderer.outputEncoding = THREE.sRGBEncoding;
-	renderer.physicallyCorrectLights = true;
+	// Modern three.js (r0.166+) handles color space automatically
+	// No need to set outputEncoding or ColorManagement.legacyMode
 	renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.0;
 	return renderer;
-}
-
-async function loadModelArrayBuffer(asset: Asset): Promise<ArrayBuffer> {
-	const uri = asset.localUri ?? asset.uri;
-	if (!uri) {
-		throw new Error('Model asset URI is unavailable.');
-	}
-
-	if (uri.startsWith('http://') || uri.startsWith('https://')) {
-		const response = await fetch(uri);
-		if (!response.ok) {
-			throw new Error(`Network response was not ok (${response.status})`);
-		}
-		return response.arrayBuffer();
-	}
-
-	const file = new File(uri);
-	return file.arrayBuffer();
-}
-
-function parseGLTFAsync(loader: any, data: ArrayBuffer, path: string) {
-	return new Promise<any>((resolve, reject) => {
-		loader.parse(data, path, resolve as any, reject);
-	});
 }

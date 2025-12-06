@@ -55,13 +55,13 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
     const pulse = Animated.sequence([
       Animated.timing(pulseScale, {
         toValue: 1.05,
-        duration: 7000,
+        duration: 20000,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
       Animated.timing(pulseScale, {
         toValue: 1,
-        duration: 2000,
+        duration: 1500,
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
       }),
