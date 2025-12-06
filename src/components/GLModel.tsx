@@ -22,7 +22,7 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 		);
 	}
 
-	const { GLView, THREE, loadAsync, modelAsset } = deps;
+	const { GLView, THREE, GLTFLoader, modelAsset } = deps;
 	const frameRef = useRef<number | null>(null);
 	const rootRef = useRef<any>(null);
 	const interactionRef = useRef({
@@ -111,17 +111,51 @@ const GLModel: React.FC<Props> = ({ style, autoRotate = true }) => {
 				originalError(...args);
 			};
 
-			let root: any;
-			try {
-				console.log('[GLModel] Loading model with ExpoTHREE.loadAsync...');
-				
-				// Load the model - textures will fail but geometry will load
-				const loaded = await loadAsync(modelAsset);
-				
-				// If it's a GLTF result, extract the scene
-				root = loaded.scene || loaded;
-				
-				// IMMEDIATELY remove all textures
+		let root: any;
+		try {
+			console.log('[GLModel] Loading model with GLTFLoader...');
+			
+			// Get the local URI from the downloaded asset
+			const uri = asset.localUri || asset.uri;
+			
+			if (!uri) {
+				throw new Error('Asset URI not available');
+			}
+			
+			console.log('[GLModel] Asset URI:', uri);
+			
+			// Load the model using GLTFLoader with fetch
+			const loader = new GLTFLoader();
+			
+			// Fetch the file data
+			const response = await fetch(uri);
+			const arrayBuffer = await response.arrayBuffer();
+			
+			console.log('[GLModel] Fetched ArrayBuffer, size:', arrayBuffer.byteLength);
+			
+			// Parse the GLB data - provide the base path as empty string
+			const gltf = await new Promise<any>((resolve, reject) => {
+				try {
+					loader.parse(
+						arrayBuffer,
+						'', // path - empty for embedded resources
+						(result) => {
+							console.log('[GLModel] Parse successful');
+							resolve(result);
+						},
+						(error) => {
+							console.error('[GLModel] Parse error:', error);
+							reject(error);
+						}
+					);
+				} catch (error) {
+					console.error('[GLModel] Parse exception:', error);
+					reject(error);
+				}
+			});
+			
+			// Extract the scene
+			root = gltf.scene;				// IMMEDIATELY remove all textures
 				root.traverse((child: any) => {
 					if (child.isMesh && child.material) {
 						const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -238,7 +272,7 @@ export default GLModel;
 type GLDependencies = {
 	GLView: typeof import('expo-gl').GLView;
 	THREE: any;
-	loadAsync: any;
+	GLTFLoader: any;
 	modelAsset: ReturnType<typeof require>;
 };
 
@@ -251,20 +285,20 @@ function getGLDependencies(): GLDependencies | null {
 
 	try {
 		const { GLView } = require('expo-gl');
-		const ExpoTHREE = require('expo-three');
-		
-		// Use THREE from three.js directly (expo-three works with it)
 		const THREE = require('three');
+		
+		// Use three-stdlib which works properly in React Native
+		const { GLTFLoader } = require('three-stdlib');
 
 		// Use the provided model filename. Make sure you add the GLB to `assets/`.
 		const modelAsset = require('../../assets/motherbaby.glb');
 
-		cachedDeps = { GLView, THREE, loadAsync: ExpoTHREE.loadAsync, modelAsset };
+		cachedDeps = { GLView, THREE, GLTFLoader, modelAsset };
 		return cachedDeps;
 	} catch (error) {
 		cachedDeps = null;
 		console.warn(
-			'[GLModel] expo-gl/expo-three unavailable – falling back to static artwork. Install a development build (npx expo run:android) to enable the 3D model.',
+			'[GLModel] expo-gl/three unavailable – falling back to static artwork. Install a development build (npx expo run:android) to enable the 3D model.',
 			error
 		);
 		return null;

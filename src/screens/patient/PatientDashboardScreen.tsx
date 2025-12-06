@@ -52,8 +52,8 @@ const calculatePregnancy = (patientData?: UserProfile['patientData']) => {
 };
 
 const formatTime = (timestamp?: number) => {
-  if (!timestamp) return '—';
-  const asMs = timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
+  if (!timestamp) return 'â€”';
+  const asMs = timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
   return format(new Date(asMs), 'HH:mm');
 };
 
@@ -163,25 +163,23 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       ? colors.attention
       : colors.muted;
 
-  const resolvedTimestamp =
-    latestVitals && typeof latestVitals.lastSampleTimestamp === 'number'
-      ? latestVitals.lastSampleTimestamp
-      : latestVitals?.timestamp ?? null;
-
-  // Check if we have received real vitals data (timestamp > 0 means real data from ESP32)
-  const hasRealData = typeof resolvedTimestamp === 'number' && resolvedTimestamp > 0;
-  const usingSampleVitals = !hasRealData;
-  
+  const usingSampleVitals = !latestVitals;
+  const baselineVitals = {
+    hr: 78,
+    spo2: 98,
+    bp_sys: 110,
+    bp_dia: 72,
+    hrv: 70,
+    skinTemp: 36.5,
+  };
   const displayVitals = {
-    hr: latestVitals?.hr ?? null,
-    spo2: latestVitals?.spo2 ?? null,
-    bp_sys: latestVitals?.bp_sys ?? null,
-    bp_dia: latestVitals?.bp_dia ?? null,
-    hrv: latestVitals?.hrv ?? null,
-    ptt: latestVitals?.ptt ?? null,
-    ecg: latestVitals?.ecg ?? null,
-    ir: latestVitals?.ir ?? null,
-    timestamp: resolvedTimestamp,
+    hr: latestVitals?.hr ?? baselineVitals.hr,
+    spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
+    bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
+    bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
+    hrv: latestVitals?.hrv ?? baselineVitals.hrv,
+    skinTemp: latestVitals?.skinTemp ?? baselineVitals.skinTemp,
+    timestamp: latestVitals?.timestamp,
   };
 
   return (
@@ -196,108 +194,6 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.heroIcon}>LB</Text>
         </View>
       </View>
-
-      {/* AI Health Insights - Show when connected with data */}
-      {hasRealData && latestVitals && (latestVitals.maternal_health_score !== undefined || latestVitals.rhythm || latestVitals.anemia_risk || latestVitals.preeclampsia_risk) && (
-        <View style={[styles.card, styles.cardHealth]}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderContent}>
-              <Text style={styles.cardEmoji}>🧠</Text>
-              <View style={styles.cardHeaderTextBlock}>
-                <Text style={styles.cardTitle}>AI Health Insights</Text>
-                <Text style={styles.cardSubtitle}>Real-time maternal health monitoring</Text>
-              </View>
-            </View>
-          </View>
-          
-          {latestVitals.maternal_health_score !== undefined && (
-            <View style={styles.healthScorePanel}>
-              <Text style={styles.healthScoreLabel}>Maternal Health Score</Text>
-              <Text style={[
-                styles.healthScoreValue,
-                { color: latestVitals.maternal_health_score >= 80 ? colors.healthy : 
-                         latestVitals.maternal_health_score >= 60 ? colors.attention : 
-                         colors.critical }
-              ]}>
-                {latestVitals.maternal_health_score}/100
-              </Text>
-              <Text style={styles.healthScoreHint}>
-                {latestVitals.maternal_health_score >= 80 ? 'Excellent health indicators' :
-                 latestVitals.maternal_health_score >= 60 ? 'Monitor regularly' :
-                 'Consult your doctor'}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.aiInsightsRow}>
-            {latestVitals.rhythm && (
-              <View style={styles.aiInsightTile}>
-                <Text style={styles.aiInsightLabel}>Heart Rhythm</Text>
-                <Text style={[
-                  styles.aiInsightValue,
-                  { color: latestVitals.rhythm === 'Normal' ? colors.healthy : colors.attention }
-                ]}>
-                  {latestVitals.rhythm}
-                </Text>
-                {latestVitals.rhythm_confidence !== undefined && (
-                  <Text style={styles.aiInsightMeta}>{String(latestVitals.rhythm_confidence)}% confidence</Text>
-                )}
-              </View>
-            )}
-            
-            {latestVitals.anemia_risk && (
-              <View style={styles.aiInsightTile}>
-                <Text style={styles.aiInsightLabel}>Anemia Risk</Text>
-                <Text style={[
-                  styles.aiInsightValue,
-                  { color: latestVitals.anemia_risk === 'Low' ? colors.healthy : 
-                           latestVitals.anemia_risk.includes('Moderate') ? colors.attention : 
-                           colors.critical }
-                ]}>
-                  {latestVitals.anemia_risk}
-                </Text>
-                {latestVitals.anemia_confidence !== undefined && (
-                  <Text style={styles.aiInsightMeta}>{String(latestVitals.anemia_confidence)}% confidence</Text>
-                )}
-              </View>
-            )}
-            
-            {latestVitals.preeclampsia_risk && (
-              <View style={styles.aiInsightTile}>
-                <Text style={styles.aiInsightLabel}>Preeclampsia Risk</Text>
-                <Text style={[
-                  styles.aiInsightValue,
-                  { color: latestVitals.preeclampsia_risk === 'Low' ? colors.healthy : 
-                           latestVitals.preeclampsia_risk.includes('Moderate') ? colors.attention : 
-                           colors.critical }
-                ]}>
-                  {latestVitals.preeclampsia_risk}
-                </Text>
-                {latestVitals.preeclampsia_confidence !== undefined && (
-                  <Text style={styles.aiInsightMeta}>{String(latestVitals.preeclampsia_confidence)}% confidence</Text>
-                )}
-              </View>
-            )}
-          </View>
-          
-          {(latestVitals.hr_source || latestVitals.bp_method) && (
-            <View style={styles.signalQualityRow}>
-              {latestVitals.hr_source && (
-                <Text style={styles.signalQualityText}>HR Source: {latestVitals.hr_source}</Text>
-              )}
-              {latestVitals.bp_method && (
-                <Text style={styles.signalQualityText}>BP Method: {latestVitals.bp_method}</Text>
-              )}
-              {latestVitals.ecg_quality !== undefined && (
-                <Text style={styles.signalQualityText}>ECG Quality: {String(latestVitals.ecg_quality)}%</Text>
-              )}
-              {latestVitals.ppg_quality !== undefined && (
-                <Text style={styles.signalQualityText}>PPG Quality: {String(latestVitals.ppg_quality)}%</Text>
-              )}
-            </View>
-          )}
-        </View>
-      )}
 
       <View style={[styles.card, styles.cardJourney]}>
         <View style={styles.cardHeader}>
@@ -342,28 +238,16 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         <View style={styles.vitalsPanelRow}>
           <View style={styles.vitalsPanel}>
             <Text style={styles.vitalsPanelHeading}>Heart Rate</Text>
-            {displayVitals.hr !== null ? (
-              <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
-            ) : (
-              <Text style={styles.vitalsPanelValueNull}>--</Text>
-            )}
+            <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
             <View style={styles.vitalsDivider} />
             <Text style={styles.vitalsPanelHeading}>SpO₂</Text>
-            {displayVitals.spo2 !== null ? (
-              <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
-            ) : (
-              <Text style={styles.vitalsPanelValueNull}>--</Text>
-            )}
+            <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
           </View>
           <View style={[styles.vitalsPanel, styles.vitalsPanelAccent]}>
             <Text style={styles.vitalsPanelHeading}>Blood Pressure</Text>
-            {displayVitals.bp_sys !== null && displayVitals.bp_dia !== null ? (
-              <Text style={styles.vitalsPanelValue}>
-                {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
-              </Text>
-            ) : (
-              <Text style={styles.vitalsPanelValueNull}>--/--</Text>
-            )}
+            <Text style={styles.vitalsPanelValue}>
+              {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
+            </Text>
             <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
           </View>
           <View style={[styles.vitalsPanel, styles.vitalsPanelSoft]}>
@@ -376,56 +260,12 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         </View>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={styles.statusText}>
-            {lifeBandState.connectionState === 'connected'
-              ? hasRealData
-                ? 'Live monitoring active'
-                : 'Connected - waiting for data...'
-              : statusLabel}
-          </Text>
+          <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
-        {lifeBandState.connectionState === 'connected' && !hasRealData && (
-          <View style={styles.waitingBox}>
-            <Text style={styles.waitingText}>📡 Waiting for LifeBand to send vitals data...</Text>
-          </View>
-        )}
-        {lifeBandState.connectionState !== 'connected' && (
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>Connect your LifeBand to see live readings.</Text>
-          </View>
-        )}
-        {latestVitals && hasRealData && (
-          <View style={styles.sensorRow}>
-            {typeof displayVitals.hrv === 'number' && (
-              <View style={styles.sensorTile}>
-                <Text style={styles.sensorLabel}>HRV</Text>
-                <Text style={styles.sensorValue}>{Math.round(displayVitals.hrv)} ms</Text>
-              </View>
-            )}
-            {typeof displayVitals.ptt === 'number' && (
-              <View style={styles.sensorTile}>
-                <Text style={styles.sensorLabel}>PTT</Text>
-                <Text style={styles.sensorValue}>{displayVitals.ptt.toFixed(1)} ms</Text>
-              </View>
-            )}
-            {typeof displayVitals.ecg === 'number' && (
-              <View style={styles.sensorTile}>
-                <Text style={styles.sensorLabel}>ECG</Text>
-                <Text style={styles.sensorValue}>{Math.round(displayVitals.ecg)}</Text>
-              </View>
-            )}
-            {typeof displayVitals.ir === 'number' && (
-              <View style={styles.sensorTile}>
-                <Text style={styles.sensorLabel}>PPG IR</Text>
-                <Text style={styles.sensorValue}>{Math.round(displayVitals.ir)}</Text>
-              </View>
-            )}
-          </View>
-        )}
         <Text style={styles.meta}>
           {usingSampleVitals
-            ? 'Waiting for vitals data from LifeBand...'
-            : `Last sync ${formatTime(displayVitals.timestamp ?? undefined)}`}
+            ? 'Showing reference values until your LifeBand shares live readings.'
+            : `Last sync ${formatTime(displayVitals.timestamp)}`}
         </Text>
         <Button
           title="View History"
@@ -648,12 +488,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: spacing.xs,
   },
-  vitalsPanelValueNull: {
-    color: colors.textSecondary,
-    fontSize: typography.subheading,
-    fontWeight: '700',
-    marginTop: spacing.xs,
-  },
   vitalsPanelHint: {
     marginTop: spacing.xs,
     color: colors.textSecondary,
@@ -677,55 +511,6 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  waitingBox: {
-    backgroundColor: '#FEF3C7',
-    padding: spacing.md,
-    borderRadius: radii.md,
-    marginTop: spacing.sm,
-  },
-  waitingText: {
-    fontSize: typography.body,
-    color: '#92400E',
-    textAlign: 'center',
-  },
-  infoBox: {
-    backgroundColor: '#E0F2FE',
-    padding: spacing.md,
-    borderRadius: radii.md,
-    marginTop: spacing.sm,
-  },
-  infoText: {
-    fontSize: typography.body,
-    color: '#0C4A6E',
-    textAlign: 'center',
-  },
-  sensorRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: spacing.sm,
-    gap: spacing.xs,
-  },
-  sensorTile: {
-    backgroundColor: colors.white,
-    borderRadius: radii.sm,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
-    minWidth: 70,
-  },
-  sensorLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  sensorValue: {
-    marginTop: 2,
-    fontSize: 14,
-    fontWeight: '700',
     color: colors.textPrimary,
   },
   meta: {
@@ -808,127 +593,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '600',
     fontSize: typography.small,
-  },
-  // Alert Card Styles
-  alertCard: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#DC2626',
-    borderWidth: 2,
-    marginHorizontal: 0,
-    marginBottom: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-  },
-  alertHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  alertIcon: {
-    fontSize: 24,
-    marginRight: spacing.sm,
-  },
-  alertTitle: {
-    fontSize: typography.subheading,
-    fontWeight: '800',
-    color: '#991B1B',
-  },
-  alertItem: {
-    marginBottom: spacing.sm,
-  },
-  alertLabel: {
-    fontSize: typography.body,
-    fontWeight: '700',
-    color: '#7F1D1D',
-  },
-  alertValue: {
-    fontSize: typography.small,
-    color: '#991B1B',
-    marginTop: 2,
-  },
-  alertFooter: {
-    fontSize: typography.small,
-    fontWeight: '600',
-    color: '#991B1B',
-    marginTop: spacing.xs,
-    fontStyle: 'italic',
-  },
-  // AI Health Insights Styles
-  cardHealth: {
-    backgroundColor: '#F0F9FF',
-  },
-  healthScorePanel: {
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
-  },
-  healthScoreLabel: {
-    fontSize: typography.small,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  healthScoreValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    marginTop: spacing.xs,
-  },
-  healthScoreHint: {
-    fontSize: typography.small,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  aiInsightsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  aiInsightTile: {
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    flex: 1,
-    minWidth: 150,
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
-  },
-  aiInsightLabel: {
-    fontSize: typography.small,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  aiInsightValue: {
-    fontSize: typography.subheading,
-    fontWeight: '700',
-    marginTop: spacing.xs,
-  },
-  aiInsightMeta: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  signalQualityRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    padding: spacing.sm,
-    backgroundColor: 'rgba(40, 53, 147, 0.04)',
-    borderRadius: radii.sm,
-  },
-  signalQualityText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '600',
   },
 });
 
