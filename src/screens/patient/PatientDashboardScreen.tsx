@@ -163,8 +163,13 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       ? colors.attention
       : colors.muted;
 
+  const resolvedTimestamp =
+    latestVitals && typeof latestVitals.lastSampleTimestamp === 'number'
+      ? latestVitals.lastSampleTimestamp
+      : latestVitals?.timestamp ?? null;
+
   // Check if we have received real vitals data (timestamp > 0 means real data from ESP32)
-  const hasRealData = latestVitals && latestVitals.timestamp > 0;
+  const hasRealData = typeof resolvedTimestamp === 'number' && resolvedTimestamp > 0;
   const usingSampleVitals = !hasRealData;
   
   const displayVitals = {
@@ -176,7 +181,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     ptt: latestVitals?.ptt ?? null,
     ecg: latestVitals?.ecg ?? null,
     ir: latestVitals?.ir ?? null,
-    timestamp: latestVitals?.timestamp ?? null,
+    timestamp: resolvedTimestamp,
   };
 
   return (

@@ -46,6 +46,14 @@ export interface VitalsSample {
   
   // Buffered data flag
   buffered?: boolean;     // True if this is historical buffered data
+
+  // Aggregated sampling metadata
+  aggregated?: boolean;   // True if this record represents a computed average
+  bucketStart?: number;   // Epoch ms marking the start of the aggregation window
+  bucketEnd?: number;     // Epoch ms marking the end of the aggregation window
+  bucketDurationMs?: number; // Duration of the aggregation window in ms
+  sampleCount?: number;   // Number of raw samples that fed into the aggregate
+  lastSampleTimestamp?: number; // Timestamp of the most recent raw reading in the bucket
 }
 
 export interface HourlySummary {

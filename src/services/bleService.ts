@@ -29,6 +29,7 @@ let notificationSub: Subscription | null = null;
 let currentDevice: Device | null = null;
 let isCleaningUp = false; // Flag to prevent multiple simultaneous cleanups
 let isConnecting = false; // Flag to prevent simultaneous connection attempts
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const initBleManager = () => {
   if (!manager) {
@@ -47,6 +48,20 @@ const requestPermissions = async () => {
     } else {
       await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
     }
+  }
+};
+
+const sendControlCommand = async (device: Device, command: string) => {
+  try {
+    await device.writeCharacteristicWithResponseForService(
+      LIFEBAND_SERVICE_UUID,
+      LIFEBAND_CONFIG_CHAR_UUID,
+      base64.encode(command),
+    );
+    console.log(`[BLE] ${command} command sent successfully`);
+  } catch (error) {
+    console.warn(`[BLE] Failed to send ${command} command`);
+    // Don't throw - this is a non-critical operation
   }
 };
 
@@ -82,6 +97,22 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       return null;
     }
     
+    const normalizeTimestamp = (raw: any) => {
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return Date.now();
+      }
+      let ts = numeric;
+      if (ts < 10_000_000_000) {
+        ts *= 1000; // assume seconds
+      }
+      const minReasonableEpoch = 1_577_836_800_000; // Jan 1 2020
+      if (ts < minReasonableEpoch) {
+        return Date.now();
+      }
+      return ts;
+    };
+
     const sample: VitalsSample = {
       // Core vitals
       hr: Number(json.hr) || 0,
@@ -93,7 +124,7 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       ecg: json.ecg !== undefined ? Number(json.ecg) : undefined,
       ir: json.ir !== undefined ? Number(json.ir) : undefined,
       red: json.red !== undefined ? Number(json.red) : undefined,
-      timestamp: json.timestamp || Date.now(),
+      timestamp: normalizeTimestamp(json.timestamp),
       
       // Extended heart rate sources
       hr_ecg: json.hr_ecg !== undefined ? Number(json.hr_ecg) : undefined,
@@ -167,9 +198,8 @@ const cleanupNotification = () => {
     try {
       notificationSub.remove();
       console.log('[BLE] Notification subscription removed');
-    } catch (error: any) {
-      const errorMsg = error?.reason || error?.message || 'Cleanup error';
-      console.warn('[BLE] Cleanup notification error:', errorMsg);
+    } catch (error) {
+      console.warn('[BLE] Cleanup notification error');
     } finally {
       notificationSub = null;
       isCleaningUp = false;
@@ -177,37 +207,103 @@ const cleanupNotification = () => {
   }
 };
 
+const waitForGracefulDisconnect = async (
+  device: Device,
+  timeoutMs = 4000,
+  pollIntervalMs = 200,
+): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const stillConnected = await device.isConnected();
+      if (!stillConnected) {
+        console.log('[BLE] Device already disconnected by peripheral');
+        return true;
+      }
+    } catch (error: any) {
+      const errorMsg = error?.reason || error?.message || 'isConnected check failed';
+      console.log('[BLE] Assuming disconnected after isConnected error:', errorMsg);
+      return true;
+    }
+    await delay(pollIntervalMs);
+  }
+  console.log('[BLE] Device still connected after wait window');
+  return false;
+};
+
 export const disconnectLifeBand = async (): Promise<void> => {
   console.log('[BLE] Disconnecting LifeBand...');
   
-  // Clean up notification first
+  // Store device reference before clearing
+  const deviceToDisconnect = currentDevice;
+  
+  // Clear references immediately to prevent re-entry and new operations
+  currentDevice = null;
+  
+  // Clean up notification subscription first
   try {
     cleanupNotification();
-  } catch (error: any) {
-    const errorMsg = error?.reason || error?.message || 'Cleanup error';
-    console.warn('[BLE] Cleanup during disconnect error:', errorMsg);
+  } catch (error) {
+    console.warn('[BLE] Cleanup during disconnect error');
   }
-  
-  // Then disconnect device
-  if (currentDevice) {
-    const deviceToDisconnect = currentDevice;
-    currentDevice = null; // Clear reference immediately to prevent re-entry
-    
-    try {
-      const isConnected = await deviceToDisconnect.isConnected();
-      if (isConnected) {
-        await deviceToDisconnect.cancelConnection();
-        console.log('[BLE] Device disconnected successfully');
-      } else {
-        console.log('[BLE] Device already disconnected');
+
+  if (!deviceToDisconnect) {
+    console.log('[BLE] No active device to disconnect');
+    return;
+  }
+
+  // Politely ask firmware to pause streaming before severing the link
+  let gracefulDisconnect = false;
+  try {
+    const stillConnected = await deviceToDisconnect.isConnected();
+    if (stillConnected) {
+      try {
+        await sendControlCommand(deviceToDisconnect, 'STOP');
+        gracefulDisconnect = await waitForGracefulDisconnect(deviceToDisconnect);
+        if (gracefulDisconnect) {
+          console.log('[BLE] STOP command triggered firmware-side disconnect');
+        }
+      } catch (stopError: any) {
+        // STOP command is non-critical, continue with manual disconnect
+        console.log('[BLE] STOP command not sent, proceeding with manual disconnect');
       }
-    } catch (error: any) {
-      const errorMsg = error?.reason || error?.message || 'Disconnect error';
-      console.warn('[BLE] Disconnect error:', errorMsg);
+    } else {
+      gracefulDisconnect = true;
+      console.log('[BLE] Device already disconnected');
+    }
+  } catch (error: any) {
+    // Can't check connection status, assume we need to disconnect
+    console.log('[BLE] Cannot verify connection status, proceeding with disconnect');
+  }
+
+  if (!gracefulDisconnect) {
+    // Try to disconnect through device first
+    try {
+      await deviceToDisconnect.cancelConnection();
+      console.log('[BLE] Device cancelConnection() resolved');
+      // Wait a bit for disconnect to propagate
+      await delay(300);
+    } catch (error) {
+      console.log('[BLE] cancelConnection completed');
+    }
+
+    // Always try manager disconnect as backup to ensure cleanup
+    if (manager) {
+      try {
+        await manager.cancelDeviceConnection(deviceToDisconnect.id);
+        console.log('[BLE] Device disconnected via manager');
+      } catch (error) {
+        console.log('[BLE] Manager disconnect completed');
+      }
     }
   } else {
-    console.log('[BLE] No device to disconnect');
+    console.log('[BLE] Skipping manual cancel - disconnect already handled');
   }
+  
+  // Final cleanup - ensure all references are cleared
+  currentDevice = null;
+  isConnecting = false;
+  console.log('[BLE] Disconnect sequence complete');
 };
 
 export const scanAndConnectToLifeBand = async (
@@ -236,7 +332,7 @@ export const scanAndConnectToLifeBand = async (
     // Scan all devices (no UUID filter) so user can see any nearby device
     manager.startDeviceScan(null, null, async (error, device) => {
       if (error) {
-        const errorMsg = error.reason || error.message || 'Scan failed';
+        const errorMsg = error?.message || 'Scan failed';
         onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
         manager?.stopDeviceScan();
         return;
@@ -263,13 +359,15 @@ export const scanAndConnectToLifeBand = async (
     onStateChange({ connectionState: 'connecting', device: { id: strongestDevice.id, name: strongestDevice.name } });
 
     // Clean up any existing connections first
-    if (currentDevice) {
+    if (currentDevice && manager) {
+      const oldDeviceId = currentDevice.id;
+      currentDevice = null; // Clear reference first
       try {
-        await currentDevice.cancelConnection();
-      } catch (e) {
+        await manager.cancelDeviceConnection(oldDeviceId);
         console.log('[BLE] Cleaned up previous connection');
+      } catch (e) {
+        console.log('[BLE] Previous connection cleanup completed');
       }
-      currentDevice = null;
     }
     
     const connected = await strongestDevice.connect({ 
@@ -336,9 +434,6 @@ export const scanAndConnectToLifeBand = async (
     console.log('[BLE] Notification listener active');
 
     // Step 6: Wait for subscription to be active
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Step 7: NOW send START command with response
     try {
       console.log('[BLE] Sending START command...');
       await connected.writeCharacteristicWithResponseForService(
@@ -346,10 +441,8 @@ export const scanAndConnectToLifeBand = async (
         LIFEBAND_CONFIG_CHAR_UUID,
         base64.encode('START'),
       );
-      console.log('[BLE] ✓ START command sent successfully');
-    } catch (writeError: any) {
-      const errorMsg = writeError.reason || writeError.message || 'Unknown error';
-      console.warn('[BLE] Failed to send START command:', errorMsg);
+    } catch (writeError) {
+      console.warn('[BLE] Failed to send START command, continuing anyway');
       // Don't fail the connection - ESP32 auto-enables notifications
     }
 
@@ -359,18 +452,26 @@ export const scanAndConnectToLifeBand = async (
       
       // Perform all cleanup in try-catch to prevent crashes
       try {
-        const errorMsg = error?.reason || error?.message || 'User disconnected';
-        console.log('[BLE] Device disconnected:', errorMsg);
-        
-        // Safe cleanup
-        try {
-          cleanupNotification();
-        } catch (cleanupError: any) {
-          console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+        if (error) {
+          console.log('[BLE] Device disconnected with error');
+        } else {
+          console.log('[BLE] Device disconnected');
         }
         
-        // Clear device reference
-        currentDevice = null;
+        // Clear device reference first to prevent new operations
+        const wasCurrentDevice = currentDevice?.id === connected.id;
+        if (wasCurrentDevice) {
+          currentDevice = null;
+        }
+        
+        // Safe cleanup - only if this was the current device
+        if (wasCurrentDevice) {
+          try {
+            cleanupNotification();
+          } catch (cleanupError: any) {
+            console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+          }
+        }
         
         // Safe state update - wrap in setTimeout to prevent state update during render
         setTimeout(() => {
@@ -392,18 +493,21 @@ export const scanAndConnectToLifeBand = async (
     onStateChange({ connectionState: 'connected', device: { id: connected.id, name: connected.name } });
     console.log('[BLE] ✓✓✓ Connection fully established ✓✓✓');
   } catch (error: any) {
-    const errorMsg = error?.reason || error?.message || 'Connection failed';
+    const errorMsg = error?.message || 'Connection failed';
     console.error('[BLE] Connection failed:', errorMsg);
     
     // Clean up on error
+    const deviceToCleanup = currentDevice;
+    currentDevice = null; // Clear reference first
+    
     cleanupNotification();
-    if (currentDevice) {
+    
+    if (deviceToCleanup && manager) {
       try {
-        await currentDevice.cancelConnection();
-      } catch (e) {
+        await manager.cancelDeviceConnection(deviceToCleanup.id);
+      } catch {
         // Ignore cleanup errors
       }
-      currentDevice = null;
     }
     
     onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
@@ -453,13 +557,15 @@ export const reconnectLifeBandById = async (
     console.log('[BLE] Reconnecting to device ID:', deviceId);
     
     // Clean up any existing connections first
-    if (currentDevice) {
+    if (currentDevice && manager) {
+      const oldDeviceId = currentDevice.id;
+      currentDevice = null; // Clear reference first
       try {
-        await currentDevice.cancelConnection();
-      } catch (e) {
+        await manager.cancelDeviceConnection(oldDeviceId);
         console.log('[BLE] Cleaned up previous connection');
+      } catch (e) {
+        console.log('[BLE] Previous connection cleanup completed');
       }
-      currentDevice = null;
     }
     
     const device = await manager.connectToDevice(deviceId, { 
@@ -551,15 +657,20 @@ export const reconnectLifeBandById = async (
         const errorMsg = error?.reason || error?.message || 'User disconnected';
         console.log('[BLE] Device disconnected:', errorMsg);
         
-        // Safe cleanup
-        try {
-          cleanupNotification();
-        } catch (cleanupError: any) {
-          console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+        // Clear device reference first to prevent new operations
+        const wasCurrentDevice = currentDevice?.id === device.id;
+        if (wasCurrentDevice) {
+          currentDevice = null;
         }
         
-        // Clear device reference
-        currentDevice = null;
+        // Safe cleanup - only if this was the current device
+        if (wasCurrentDevice) {
+          try {
+            cleanupNotification();
+          } catch (cleanupError: any) {
+            console.warn('[BLE] Cleanup error in disconnect handler:', cleanupError?.message || cleanupError);
+          }
+        }
         
         // Safe state update - wrap in setTimeout to prevent state update during render
         setTimeout(() => {
@@ -585,14 +696,17 @@ export const reconnectLifeBandById = async (
     console.error('[BLE] Reconnection failed:', errorMsg);
     
     // Clean up on error
+    const deviceToCleanup = currentDevice;
+    currentDevice = null; // Clear reference first
+    
     cleanupNotification();
-    if (currentDevice) {
+    
+    if (deviceToCleanup && manager) {
       try {
-        await currentDevice.cancelConnection();
+        await manager.cancelDeviceConnection(deviceToCleanup.id);
       } catch (e) {
         // Ignore cleanup errors
       }
-      currentDevice = null;
     }
     
     onStateChange({ connectionState: 'disconnected', lastError: errorMsg });

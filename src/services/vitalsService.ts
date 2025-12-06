@@ -6,6 +6,8 @@ import {
   orderBy,
   query,
   limit,
+  doc,
+  setDoc,
   FirestoreDataConverter,
 } from 'firebase/firestore';
 import { firestore } from './firebase';
@@ -23,6 +25,9 @@ const vitalsConverter: FirestoreDataConverter<VitalsSample> = {
 const vitalsCollectionRef = (userId: string) =>
   collection(firestore, 'users', userId, 'vitals').withConverter(vitalsConverter);
 
+const vitalsDocRef = (userId: string, bucketStart: number) =>
+  doc(firestore, 'users', userId, 'vitals', bucketStart.toString()).withConverter(vitalsConverter);
+
 export const saveVitalsSample = async (userId: string, sample: VitalsSample): Promise<void> => {
   // Filter out undefined fields to prevent Firestore validation errors
   const cleanedSample = Object.fromEntries(
@@ -34,6 +39,27 @@ export const saveVitalsSample = async (userId: string, sample: VitalsSample): Pr
     timestamp: sample.timestamp || Date.now(),
     serverTimestamp: serverTimestamp(),
   } as any);
+};
+
+export const saveAggregatedVitalsSample = async (
+  userId: string,
+  bucketStart: number,
+  sample: VitalsSample,
+): Promise<void> => {
+  const cleanedSample = Object.fromEntries(
+    Object.entries(sample).filter(([_, value]) => value !== undefined)
+  );
+
+  await setDoc(
+    vitalsDocRef(userId, bucketStart),
+    {
+      ...cleanedSample,
+      timestamp: bucketStart,
+      bucketStart,
+      serverTimestamp: serverTimestamp(),
+    } as any,
+    { merge: true },
+  );
 };
 
 export const subscribeToLatestVitals = (
@@ -53,8 +79,10 @@ export const subscribeToLatestVitals = (
 export const subscribeToVitalsHistory = (
   userId: string,
   callback: (samples: VitalsSample[]) => void,
+  options: { maxEntries?: number } = {},
 ) => {
-  const q = query(vitalsCollectionRef(userId), orderBy('timestamp', 'desc'));
+  const { maxEntries = 336 } = options; // ~7 days of 30-min buckets
+  const q = query(vitalsCollectionRef(userId), orderBy('timestamp', 'desc'), limit(maxEntries));
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => d.data()));
   });

@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../services/firebase';
-import { saveVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
+import { saveAggregatedVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
 import {
   BleConnectionState,
   LifeBandState,
@@ -25,6 +25,35 @@ type LifeBandContextValue = {
 
 const LifeBandContext = createContext<LifeBandContextValue | undefined>(undefined);
 const DEVICE_KEY = 'lifeband_device_id';
+const AGGREGATION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const MIN_REASONABLE_EPOCH_MS = 1_577_836_800_000; // Jan 1 2020
+
+type AggregationState = {
+  bucketStart: number;
+  bucketEnd: number;
+  count: number;
+  numericSums: Record<string, number>;
+  latestSample: VitalsSample;
+};
+
+const resolveSampleTimestamp = (sample?: VitalsSample | null) => {
+  if (!sample) return 0;
+  const candidate =
+    typeof sample.lastSampleTimestamp === 'number' && Number.isFinite(sample.lastSampleTimestamp)
+      ? sample.lastSampleTimestamp
+      : sample.timestamp;
+  return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : 0;
+};
+
+const ensureLastSampleTimestamp = (sample: VitalsSample): VitalsSample => {
+  if (typeof sample.lastSampleTimestamp === 'number') {
+    return sample;
+  }
+  return {
+    ...sample,
+    lastSampleTimestamp: sample.timestamp,
+  };
+};
 
 export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lifeBandState, setLifeBandState] = useState<LifeBandState>({ connectionState: 'disconnected' });
@@ -36,6 +65,9 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const reconnectAttemptRef = useRef(0); // Track reconnection attempts
   const maxReconnectAttempts = 3; // Maximum auto-reconnect attempts
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Track reconnection timeout
+  const aggregationRef = useRef<AggregationState | null>(null);
+  const liveSampleRef = useRef<VitalsSample | null>(null);
+  const connectionStateRef = useRef<BleConnectionState>('disconnected');
 
   const uid = auth.currentUser?.uid;
 
@@ -58,11 +90,45 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!uid) return;
     latestSubRef.current?.();
     latestSubRef.current = subscribeToLatestVitals(uid, (sample) => {
-      if (isMountedRef.current) {
-        setLatestVitals(sample);
+      if (!isMountedRef.current) {
+        return;
       }
+
+      if (!sample) {
+        if (liveSampleRef.current) {
+          return;
+        }
+        setLatestVitals(null);
+        return;
+      }
+
+      const normalizedSample = ensureLastSampleTimestamp(sample);
+      const cloudTimestamp = resolveSampleTimestamp(normalizedSample);
+      const liveTimestamp = resolveSampleTimestamp(liveSampleRef.current);
+
+      if (
+        liveSampleRef.current &&
+        connectionStateRef.current === 'connected' &&
+        liveTimestamp >= cloudTimestamp
+      ) {
+        return;
+      }
+
+      if (connectionStateRef.current !== 'connected') {
+        liveSampleRef.current = null;
+      }
+
+      setLatestVitals(normalizedSample);
     });
     return () => latestSubRef.current?.();
+  }, [uid]);
+
+  useEffect(() => {
+    connectionStateRef.current = lifeBandState.connectionState;
+  }, [lifeBandState.connectionState]);
+
+  useEffect(() => {
+    aggregationRef.current = null;
   }, [uid]);
 
   const persistDevice = useCallback(
@@ -81,6 +147,95 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [uid],
   );
 
+  const persistAggregation = useCallback(
+    async (state: AggregationState) => {
+      if (!uid) return;
+      const aggregatedSample: VitalsSample = {
+        ...state.latestSample,
+        timestamp: state.bucketStart,
+        bucketStart: state.bucketStart,
+        bucketEnd: state.bucketEnd,
+        bucketDurationMs: AGGREGATION_WINDOW_MS,
+        sampleCount: state.count,
+        aggregated: true,
+        lastSampleTimestamp: state.latestSample.timestamp,
+      };
+
+      Object.entries(state.numericSums).forEach(([key, sum]) => {
+        (aggregatedSample as any)[key] = Number((sum / state.count).toFixed(1));
+      });
+
+      await saveAggregatedVitalsSample(uid, state.bucketStart, aggregatedSample);
+    },
+    [uid],
+  );
+
+  const recordAggregatedSample = useCallback(
+    (sample: VitalsSample) => {
+      if (!uid) return;
+      const normalizeTimestamp = (raw?: number) => {
+        if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+          return Date.now();
+        }
+        let ts = raw;
+        if (ts < 10_000_000_000) {
+          ts *= 1000;
+        }
+        if (ts < MIN_REASONABLE_EPOCH_MS) {
+          return Date.now();
+        }
+        return ts;
+      };
+
+      const timestamp = normalizeTimestamp(sample.timestamp);
+      const enrichedSample = { ...sample, timestamp };
+
+      const bucketStart = Math.floor(timestamp / AGGREGATION_WINDOW_MS) * AGGREGATION_WINDOW_MS;
+      const bucketEnd = bucketStart + AGGREGATION_WINDOW_MS;
+
+      let current = aggregationRef.current;
+      if (!current || current.bucketStart !== bucketStart) {
+        current = {
+          bucketStart,
+          bucketEnd,
+          count: 0,
+          numericSums: {},
+          latestSample: enrichedSample,
+        };
+      }
+
+      if (!current) {
+        return;
+      }
+
+      current.count += 1;
+      current.latestSample = enrichedSample;
+
+      Object.entries(enrichedSample).forEach(([key, value]) => {
+        if (key === 'timestamp') return;
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          current.numericSums[key] = (current.numericSums[key] || 0) + value;
+        }
+      });
+
+      aggregationRef.current = current;
+
+      const snapshot: AggregationState = {
+        bucketStart: current.bucketStart,
+        bucketEnd: current.bucketEnd,
+        count: current.count,
+        numericSums: { ...current.numericSums },
+        latestSample: { ...current.latestSample },
+      };
+
+      persistAggregation(snapshot).catch((error: any) => {
+        const errorMsg = error?.reason || error?.message || 'Unknown error';
+        console.warn('[CONTEXT] Aggregate save failed:', errorMsg);
+      });
+    },
+    [persistAggregation, uid],
+  );
+
   const handleVitals = useCallback(
     async (sample: VitalsSample) => {
       // Safety check: don't update state if component unmounted
@@ -90,24 +245,19 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       
       try {
-        console.log('[CONTEXT] Received vitals:', JSON.stringify(sample));
-        setLatestVitals(sample);
+        const enrichedSample = ensureLastSampleTimestamp(sample);
+        console.log('[CONTEXT] Received vitals:', JSON.stringify(enrichedSample));
+        liveSampleRef.current = enrichedSample;
+        setLatestVitals(enrichedSample);
         
-        // Save to Firestore in background without blocking
-        if (uid) {
-          saveVitalsSample(uid, sample)
-            .then(() => console.log('[CONTEXT] Vitals saved'))
-            .catch((error: any) => {
-              const errorMsg = error?.reason || error?.message || 'Unknown error';
-              console.warn('[CONTEXT] Save failed (non-critical):', errorMsg);
-            });
-        }
+        // Persist aggregated vitals snapshot in the background
+        recordAggregatedSample(enrichedSample);
       } catch (error: any) {
         const errorMsg = error?.reason || error?.message || 'Unknown error';
         console.error('[CONTEXT] handleVitals error:', errorMsg);
       }
     },
-    [uid],
+    [recordAggregatedSample],
   );
 
   const connectLifeBand = useCallback(async () => {
@@ -158,20 +308,60 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [handleVitals, persistDevice, lifeBandState.connectionState, connecting]);
 
   const disconnect = useCallback(async () => {
+    console.log('[CONTEXT] Disconnect requested');
+    
+    // Check if component is mounted before proceeding
+    if (!isMountedRef.current) {
+      console.log('[CONTEXT] Component unmounted, aborting disconnect');
+      return;
+    }
+    
     try {
-      shouldAutoReconnectRef.current = false; // Disable auto-reconnect when user disconnects
-      reconnectAttemptRef.current = 0; // Reset reconnect attempts
+      // Disable auto-reconnect when user manually disconnects
+      shouldAutoReconnectRef.current = false;
+      reconnectAttemptRef.current = 0;
+      
+      // Clear any pending reconnection timeouts
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      await disconnectLifeBand();
+      
+      // Update state to show disconnecting (optional visual feedback)
       if (isMountedRef.current) {
-        setLifeBandState({ connectionState: 'disconnected' });
+        setLifeBandState(prev => ({ ...prev, connectionState: 'disconnected' }));
+      }
+      
+      // Perform actual disconnect
+      await disconnectLifeBand();
+      
+      // Confirm disconnected state after successful disconnect
+      if (isMountedRef.current) {
+        console.log('[CONTEXT] Disconnect successful');
+        // Use setTimeout to avoid state update during render
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setLifeBandState({ connectionState: 'disconnected' });
+            setConnecting(false);
+          }
+        }, 0);
       }
     } catch (error: any) {
       const errorMsg = error?.reason || error?.message || 'Disconnect failed';
       console.error('[CONTEXT] Disconnect error:', errorMsg);
+      
+      // Update state with error only if still mounted
+      if (isMountedRef.current) {
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setLifeBandState({ 
+              connectionState: 'disconnected', 
+              lastError: 'Disconnect failed' 
+            });
+            setConnecting(false);
+          }
+        }, 0);
+      }
     }
   }, []);
 
