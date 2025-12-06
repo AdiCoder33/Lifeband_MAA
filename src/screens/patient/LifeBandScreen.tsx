@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -15,10 +15,32 @@ const LifeBandScreen: React.FC<Props> = () => {
   const [devices, setDevices] = useState<BleDeviceInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [wasConnected, setWasConnected] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [suppressDisconnectAlert, setSuppressDisconnectAlert] = useState(false);
 
   useEffect(() => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
+
+  // Monitor connection status and show alert on unexpected disconnection
+  useEffect(() => {
+    if (lifeBandState.connectionState === 'connected') {
+      setWasConnected(true);
+    } else if (lifeBandState.connectionState === 'disconnected' && wasConnected) {
+      if (!suppressDisconnectAlert) {
+        Alert.alert(
+          'LifeBand Disconnected',
+          lifeBandState.lastError 
+            ? `Your LifeBand has been disconnected: ${lifeBandState.lastError}` 
+            : 'Your LifeBand has been disconnected. Please reconnect to continue monitoring.',
+          [{ text: 'OK' }]
+        );
+      }
+      setSuppressDisconnectAlert(false);
+      setWasConnected(false);
+    }
+  }, [lifeBandState.connectionState, lifeBandState.lastError, wasConnected, suppressDisconnectAlert]);
 
   const status = lifeBandState.connectionState;
   const deviceName = lifeBandState.device?.name || lifeBandState.device?.id || 'Unknown device';
@@ -41,6 +63,24 @@ const LifeBandScreen: React.FC<Props> = () => {
 
   const handleConnectToDevice = async (id: string) => {
     await connectToDevice(id);
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      setDisconnecting(true);
+      setSuppressDisconnectAlert(true);
+      await disconnect();
+    } catch (error: any) {
+      console.error('[LIFEBAND] Disconnect error:', error?.message || error);
+      Alert.alert(
+        'Disconnect Error',
+        'Failed to disconnect from LifeBand. Please try again.',
+        [{ text: 'OK' }]
+      );
+      setSuppressDisconnectAlert(false);
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   return (
@@ -77,7 +117,7 @@ const LifeBandScreen: React.FC<Props> = () => {
 
       <View style={styles.actions}>
         {status === 'connected' ? (
-          <Button title="Disconnect" onPress={disconnect} loading={connecting} />
+          <Button title="Disconnect" onPress={handleDisconnect} loading={disconnecting} />
         ) : (
           <>
             <Button title="Scan" onPress={handleScan} loading={scanning} />

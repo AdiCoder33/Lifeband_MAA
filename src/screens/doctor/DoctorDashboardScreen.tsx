@@ -39,7 +39,7 @@ type ActiveEntry = {
 
 const toMillis = (timestamp?: number) => {
   if (!timestamp) return 0;
-  return timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
+  return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
 };
 
 const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
@@ -349,7 +349,9 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                       {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
                     </Text>
                     <Text style={styles.cellValue}>{p.vitals ? p.vitals.hr : '—'}</Text>
-                    <Text style={styles.cellValue}>{p.vitals ? p.vitals.hrv : '—'}</Text>
+                    <Text style={styles.cellValue}>
+                      {typeof p.vitals?.hrv === 'number' ? p.vitals.hrv : '—'}
+                    </Text>
                     <Text style={styles.cellValue}>
                       {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
                     </Text>
