@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert, Animated, PanResponder } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert, Animated } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
-import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
 import { useLifeBand } from '../../context/LifeBandContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +8,8 @@ import { PatientStackParamList } from '../../types/navigation';
 import { BleDeviceInfo, scanForDevices } from '../../services/bleService';
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'LifeBand'>;
+const DISCONNECT_ALERT_DELAY_MS = 700;
+const POST_CONNECT_GRACE_MS = 2500;
 
 const LifeBandScreen: React.FC<Props> = () => {
   const { lifeBandState, connecting, connectLifeBand, connectToDevice, disconnect, reconnectIfKnownDevice } = useLifeBand();
@@ -20,33 +21,96 @@ const LifeBandScreen: React.FC<Props> = () => {
   const [suppressDisconnectAlert, setSuppressDisconnectAlert] = useState(false);
   const [showManualDevices, setShowManualDevices] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const slideAnim = new Animated.Value(0);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const prevConnectionState = useRef(lifeBandState.connectionState);
+  const disconnectAlertTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressAlertRef = useRef(suppressDisconnectAlert);
+  const latestConnectionStateRef = useRef(lifeBandState.connectionState);
+  const postConnectGraceDeadlineRef = useRef(0);
+  const status = lifeBandState.connectionState;
+  const deviceName = lifeBandState.device?.name || lifeBandState.device?.id || 'Unknown device';
 
   useEffect(() => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
 
-  // Monitor connection status and show alert on unexpected disconnection
   useEffect(() => {
-    if (lifeBandState.connectionState === 'connected') {
+    suppressAlertRef.current = suppressDisconnectAlert;
+  }, [suppressDisconnectAlert]);
+
+  useEffect(() => {
+    latestConnectionStateRef.current = lifeBandState.connectionState;
+  }, [lifeBandState.connectionState]);
+
+  useEffect(
+    () => () => {
+      if (disconnectAlertTimeout.current) {
+        clearTimeout(disconnectAlertTimeout.current);
+        disconnectAlertTimeout.current = null;
+      }
+    },
+    [],
+  );
+
+  // Monitor connection status transitions and show contextual alerts
+  useEffect(() => {
+    const previousState = prevConnectionState.current;
+    const currentState = lifeBandState.connectionState;
+
+    if (currentState === 'connected' && previousState !== 'connected') {
+      if (disconnectAlertTimeout.current) {
+        clearTimeout(disconnectAlertTimeout.current);
+        disconnectAlertTimeout.current = null;
+      }
+      postConnectGraceDeadlineRef.current = Date.now() + POST_CONNECT_GRACE_MS;
       setWasConnected(true);
-    } else if (lifeBandState.connectionState === 'disconnected' && wasConnected) {
-      if (!suppressDisconnectAlert) {
+      setSuppressDisconnectAlert(false);
+      Alert.alert('LifeBand Connected', `Connected to ${deviceName}. Live vitals streaming is active.`, [
+        { text: 'OK' },
+      ]);
+    }
+
+    if (
+      previousState === 'connected' &&
+      currentState === 'disconnected' &&
+      wasConnected &&
+      !suppressDisconnectAlert
+    ) {
+      if (disconnectAlertTimeout.current) {
+        clearTimeout(disconnectAlertTimeout.current);
+      }
+      const now = Date.now();
+      const errorMessage = lifeBandState.lastError;
+      const graceDelay = Math.max(0, postConnectGraceDeadlineRef.current - now);
+      const delayMs = Math.max(DISCONNECT_ALERT_DELAY_MS, graceDelay);
+      disconnectAlertTimeout.current = setTimeout(() => {
+        if (
+          suppressAlertRef.current ||
+          latestConnectionStateRef.current === 'connected'
+        ) {
+          disconnectAlertTimeout.current = null;
+          return;
+        }
         Alert.alert(
           'LifeBand Disconnected',
-          lifeBandState.lastError 
-            ? `Your LifeBand has been disconnected: ${lifeBandState.lastError}` 
+          errorMessage
+            ? `Your LifeBand has been disconnected: ${errorMessage}`
             : 'Your LifeBand has been disconnected. Please reconnect to continue monitoring.',
-          [{ text: 'OK' }]
+          [{ text: 'OK' }],
         );
-      }
-      setSuppressDisconnectAlert(false);
-      setWasConnected(false);
+        setWasConnected(false);
+        disconnectAlertTimeout.current = null;
+      }, delayMs);
     }
-  }, [lifeBandState.connectionState, lifeBandState.lastError, wasConnected, suppressDisconnectAlert]);
 
-  const status = lifeBandState.connectionState;
-  const deviceName = lifeBandState.device?.name || lifeBandState.device?.id || 'Unknown device';
+    prevConnectionState.current = currentState;
+  }, [
+    lifeBandState.connectionState,
+    lifeBandState.lastError,
+    deviceName,
+    suppressDisconnectAlert,
+    wasConnected,
+  ]);
 
   const getStatusColor = () => {
     switch (status) {

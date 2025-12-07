@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { saveAggregatedVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
 import {
@@ -69,7 +70,14 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const liveSampleRef = useRef<VitalsSample | null>(null);
   const connectionStateRef = useRef<BleConnectionState>('disconnected');
 
-  const uid = auth.currentUser?.uid;
+  const [uid, setUid] = useState<string | null>(() => auth.currentUser?.uid ?? null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUid(user?.uid ?? null);
+    });
+    return unsubscribe;
+  }, []);
 
   // Mark component as mounted/unmounted
   useEffect(() => {
