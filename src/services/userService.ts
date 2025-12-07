@@ -58,8 +58,8 @@ export const updateUserProfile = async (
   uid: string,
   data: Partial<UserProfile>,
 ): Promise<void> => {
-  await updateDoc(doc(firestore, usersCollection, uid), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
+  // Remove undefined values to prevent Firestore errors
+  const cleanData = JSON.parse(JSON.stringify({ ...data, updatedAt: serverTimestamp() }));
+  
+  await updateDoc(doc(firestore, usersCollection, uid), cleanData);
 };
