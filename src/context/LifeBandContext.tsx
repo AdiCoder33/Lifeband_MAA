@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebase';
-import { saveAggregatedVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
+import { saveAggregatedVitalsSample, saveVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
 import {
   BleConnectionState,
   LifeBandState,
@@ -103,30 +103,16 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (!sample) {
-        if (liveSampleRef.current) {
-          return;
-        }
         setLatestVitals(null);
         return;
       }
 
       const normalizedSample = ensureLastSampleTimestamp(sample);
-      const cloudTimestamp = resolveSampleTimestamp(normalizedSample);
-      const liveTimestamp = resolveSampleTimestamp(liveSampleRef.current);
-
-      if (
-        liveSampleRef.current &&
-        connectionStateRef.current === 'connected' &&
-        liveTimestamp >= cloudTimestamp
-      ) {
-        return;
-      }
-
-      if (connectionStateRef.current !== 'connected') {
-        liveSampleRef.current = null;
-      }
-
+      
+      // Always update with Firestore data to ensure patient and doctor see same values
+      console.log('[CONTEXT] Firestore vitals update:', normalizedSample.hr, normalizedSample.timestamp);
       setLatestVitals(normalizedSample);
+      liveSampleRef.current = normalizedSample;
     });
     return () => latestSubRef.current?.();
   }, [uid]);
@@ -240,6 +226,10 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const errorMsg = error?.reason || error?.message || 'Unknown error';
         console.warn('[CONTEXT] Aggregate save failed:', errorMsg);
       });
+      
+      // Immediately update local state for real-time display
+      liveSampleRef.current = enrichedSample;
+      setLatestVitals(enrichedSample);
     },
     [persistAggregation, uid],
   );
@@ -258,6 +248,13 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         liveSampleRef.current = enrichedSample;
         setLatestVitals(enrichedSample);
         
+        // Save the raw latest sample immediately for real-time doctor view
+        if (uid) {
+          saveVitalsSample(uid, enrichedSample).catch((error: any) => {
+            console.warn('[CONTEXT] Latest sample save failed:', error?.message || 'Unknown error');
+          });
+        }
+        
         // Persist aggregated vitals snapshot in the background
         recordAggregatedSample(enrichedSample);
       } catch (error: any) {
@@ -265,7 +262,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         console.error('[CONTEXT] handleVitals error:', errorMsg);
       }
     },
-    [recordAggregatedSample],
+    [recordAggregatedSample, uid],
   );
 
   const connectLifeBand = useCallback(async () => {

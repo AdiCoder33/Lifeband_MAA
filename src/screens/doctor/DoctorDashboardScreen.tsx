@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList, Linking } from 'react-native';
+import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList, Linking, Image } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -40,6 +40,39 @@ type ActiveEntry = {
 const toMillis = (timestamp?: number) => {
   if (!timestamp) return 0;
   return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
+};
+
+const formatTime = (timestamp?: number) => {
+  if (!timestamp) return '—';
+  const asMs = timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
+  return format(new Date(asMs), 'HH:mm');
+};
+
+const getGreeting = () => {
+  const now = new Date();
+  const hour = now.getHours();
+  
+  if (hour >= 5 && hour < 12) {
+    return {
+      greeting: 'Good Morning',
+      caption: "Start your day empowering mothers and babies with care."
+    };
+  } else if (hour >= 12 && hour < 17) {
+    return {
+      greeting: 'Good Afternoon',
+      caption: "Your dedication brings health and hope to families."
+    };
+  } else if (hour >= 17 && hour < 21) {
+    return {
+      greeting: 'Good Evening',
+      caption: "Review the day's insights and prepare for tomorrow."
+    };
+  } else {
+    return {
+      greeting: 'Good Night',
+      caption: "Rest well, Doctor. Your patients are in good hands."
+    };
+  }
 };
 
 const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
@@ -110,12 +143,28 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   }, [patientSummaries]);
 
   const handleSignOut = useCallback(async () => {
-    try {
-      await signOutUser();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Sign out failed', message);
-    }
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOutUser();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Please try again.';
+              Alert.alert('Sign out failed', message);
+            }
+          },
+        },
+      ],
+    );
   }, []);
 
   const handleReviewPatient = useCallback(() => {
@@ -148,11 +197,19 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       headerRight: () => (
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.headerActionButton} onPress={() => navigation.navigate('DoctorQR')}>
-            <Text style={styles.headerActionIcon}>🔗</Text>
+            <Image 
+              source={require('../../../assets/QRCode.png')} 
+              style={styles.headerQRImage}
+              resizeMode="contain"
+            />
             <Text style={styles.headerActionLabel}>Share QR</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.headerActionButton, styles.headerSignOut]} onPress={handleSignOut}>
-            <Text style={styles.headerActionLabelAlt}>Sign out</Text>
+          <TouchableOpacity style={styles.headerSignOut} onPress={handleSignOut}>
+            <Image 
+              source={require('../../../assets/Logout.png')} 
+              style={styles.headerLogoutImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
       ),
@@ -187,42 +244,76 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       Object.values(patientUnsubs.current).forEach((u) => u && u());
       patientUnsubs.current = {};
 
-      const summaries: PatientSummaryEntry[] = [];
+      if (snap.empty) {
+        setPatientSummaries([]);
+        setPatientCount(0);
+        return;
+      }
+
+      const patientIds: string[] = [];
+      const profiles: Record<string, UserProfile> = {};
+
+      // First, get all patient profiles
       for (const d of snap.docs) {
         const patientId = (d.data() as any).patientId;
+        if (!patientId) continue;
+        
         const psnap = await getDoc(doc(firestore, 'users', patientId));
         if (!psnap.exists()) continue;
+        
         const profile = psnap.data() as UserProfile;
-        const defaultSummary = { profile, vitals: null };
-        summaries.push(defaultSummary);
+        profiles[patientId] = profile;
+        patientIds.push(patientId);
+        
+        // Initialize with null vitals
+        setPatientSummaries((prev) => {
+          const existing = prev.find(p => p.profile.uid === patientId);
+          if (existing) return prev;
+          return [...prev, { profile, vitals: null }];
+        });
 
+        // Subscribe to real-time vitals updates for this patient
         const unsubVitals = subscribeToLatestVitals(patientId, (sample) => {
+          console.log(`[DOCTOR DASHBOARD] Received vitals for patient ${patientId}:`, sample?.hr, sample?.timestamp);
           setPatientSummaries((prev) => {
             const other = prev.filter((p) => p.profile.uid !== patientId);
-            return [...other, { profile, vitals: sample }];
+            return [...other, { profile, vitals: sample }].sort((a, b) => 
+              a.profile.name.localeCompare(b.profile.name)
+            );
           });
         });
         patientUnsubs.current[patientId] = unsubVitals;
       }
-      setPatientSummaries(summaries);
-      setPatientCount(summaries.length);
+
+      // Remove patients that are no longer linked
+      setPatientSummaries((prev) => 
+        prev.filter(p => patientIds.includes(p.profile.uid))
+      );
+      setPatientCount(patientIds.length);
     });
+    
     return () => {
       unsub();
       Object.values(patientUnsubs.current).forEach((u) => u && u());
     };
   }, [uid]);
 
+  const { greeting, caption } = getGreeting();
+
   return (
-    <ScreenContainer>
+    <ScreenContainer scrollable>
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
-          <Text style={styles.heroTitle}>Hello, Dr. {profile?.name || 'Doctor'}</Text>
+          <Text style={styles.heroTitle}>{greeting}, Dr. {profile?.name || 'Doctor'}</Text>
           <Text style={styles.heroSubtitle}>{profile?.doctorData?.hospital || 'Your clinic'}</Text>
-          <Text style={styles.heroCaption}>Keep your patients close and visits organized.</Text>
+          <Text style={styles.heroCaption}>{caption}</Text>
         </View>
         <View style={styles.heroBadge}>
-          <Text style={styles.heroIcon}>🩺</Text>
+          <Image 
+            source={require('../../../assets/Doctor.png')} 
+            style={styles.heroProfileImage}
+            resizeMode="cover"
+          />
         </View>
       </View>
 
@@ -294,12 +385,12 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
         <View style={[styles.statCardAlt, styles.card]}>
-          <Text style={styles.cardLabel}>Upcoming</Text>
+          <Text style={styles.cardLabel}>Upcoming Appointments</Text>
           <Text style={styles.cardValue}>{upcoming.length}</Text>
         </View>
       </View>
 
-      <View style={styles.cardFull}>
+      <View style={[styles.cardFull, styles.cardAppointments]}>
         <Text style={styles.cardTitle}>Next Appointments</Text>
         {nextAppointments.length === 0 ? (
           <Text style={styles.cardCopy}>No upcoming appointments.</Text>
@@ -319,48 +410,181 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         <Button title="View All Appointments" variant="outline" onPress={() => navigation.navigate('DoctorAppointments')} />
       </View>
 
-      <View style={styles.cardFull}>
+      <View style={[styles.cardFull, styles.cardPatientsVitals]}>
         <Text style={styles.cardTitle}>Patients & Vitals</Text>
+        <Text style={styles.cardCopy}>Monitor vitals from all your linked patients at a glance.</Text>
         {patientSummaries.length === 0 ? (
-          <Text style={styles.cardCopy}>No linked patients yet.</Text>
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateIcon}>👥</Text>
+            <Text style={styles.emptyStateText}>No linked patients yet</Text>
+            <Text style={styles.emptyStateHint}>Share your QR code to connect with patients</Text>
+          </View>
         ) : (
-          <FlatList
-            data={patientPages}
-            keyExtractor={(_, idx) => `page-${idx}`}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item: page }) => (
-              <View style={styles.tablePage}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.headerCell, styles.cellName]}>Patient</Text>
-                  <Text style={styles.headerCell}>BP</Text>
-                  <Text style={styles.headerCell}>HR</Text>
-                  <Text style={styles.headerCell}>HRV</Text>
-                  <Text style={styles.headerCell}>SpO₂</Text>
-                </View>
-                {page.map((p) => (
-                  <View key={p.profile.uid} style={styles.tableRow}>
+          <View style={styles.tableContainer}>
+            <FlatList
+              data={patientPages}
+              keyExtractor={(_, idx) => `page-${idx}`}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              renderItem={({ item: page }) => {
+                // Sort page to show high/medium risk first, then normal
+                const sortedPage = [...page].sort((a, b) => {
+                  const getRiskScore = (patient: typeof a) => {
+                    if (!patient.vitals) return -1;
+                    let score = 0;
+                    
+                    // High risk conditions
+                    if (patient.vitals.arrhythmia_alert) score += 10;
+                    if (patient.vitals.anemia_alert) score += 10;
+                    if (patient.vitals.preeclampsia_alert) score += 10;
+                    if (patient.vitals.anemia_risk === 'Critical' || patient.vitals.anemia_risk === 'High') score += 8;
+                    if (patient.vitals.preeclampsia_risk === 'Critical' || patient.vitals.preeclampsia_risk === 'High') score += 8;
+                    
+                    // Medium risk conditions
+                    if (patient.vitals.anemia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.preeclampsia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.rhythm && patient.vitals.rhythm !== 'Normal') score += 3;
+                    
+                    return score;
+                  };
+                  
+                  return getRiskScore(b) - getRiskScore(a);
+                });
+                
+                // Take top 3 patients
+                const displayPatients = sortedPage.slice(0, 3);
+                
+                return (
+                <View style={styles.tablePage}>
+                  <View style={styles.tableHeader}>
                     <View style={styles.cellName}>
-                      <Text style={styles.patientName}>{p.profile.name}</Text>
-                      <Text style={styles.patientMeta}>{p.profile.email}</Text>
+                      <Text style={styles.headerCell}>Patient</Text>
                     </View>
-                    <Text style={styles.cellValue}>
-                      {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
-                    </Text>
-                    <Text style={styles.cellValue}>{p.vitals ? p.vitals.hr : '—'}</Text>
-                    <Text style={styles.cellValue}>
-                      {typeof p.vitals?.hrv === 'number' ? p.vitals.hrv : '—'}
-                    </Text>
-                    <Text style={styles.cellValue}>
-                      {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
-                    </Text>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>HR</Text>
+                    </View>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>BP</Text>
+                    </View>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>SpO₂</Text>
+                    </View>
+                    <View style={styles.cellStatus}>
+                      <Text style={styles.headerCell}>Status</Text>
+                    </View>
                   </View>
-                ))}
+                  {displayPatients.map((p, idx) => {
+                    // Check all conditions from vitals data with severity levels
+                    let statusText = 'Normal';
+                    let statusColor = colors.healthy;
+                    let severity = 0; // 0=normal, 1=medium, 2=high
+                    
+                    if (!p.vitals) {
+                      statusText = 'No Data';
+                      statusColor = colors.muted;
+                    } else {
+                      const highConditions: string[] = [];
+                      const mediumConditions: string[] = [];
+                      
+                      // High severity checks
+                      if (p.vitals.arrhythmia_alert) {
+                        highConditions.push('Arrhythmia');
+                      }
+                      if (p.vitals.anemia_alert) {
+                        highConditions.push('Anemia');
+                      }
+                      if (p.vitals.preeclampsia_alert) {
+                        highConditions.push('Preeclampsia');
+                      }
+                      if (p.vitals.anemia_risk === 'Critical' || p.vitals.anemia_risk === 'High') {
+                        highConditions.push(`${p.vitals.anemia_risk} Anemia`);
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Critical' || p.vitals.preeclampsia_risk === 'High') {
+                        highConditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
+                      }
+                      
+                      // Medium severity checks
+                      if (p.vitals.anemia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Anemia');
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Preeclampsia');
+                      }
+                      if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal' && !p.vitals.arrhythmia_alert) {
+                        mediumConditions.push(p.vitals.rhythm);
+                      }
+                      
+                      // Determine status priority: High > Medium > Normal
+                      if (highConditions.length > 0) {
+                        statusText = highConditions[0];
+                        statusColor = colors.critical; // Red
+                        severity = 2;
+                      } else if (mediumConditions.length > 0) {
+                        statusText = mediumConditions[0];
+                        statusColor = colors.attention; // Orange
+                        severity = 1;
+                      }
+                    }
+                    
+                    // Determine row background color based on severity
+                    let rowBackgroundColor = '#F1F8F4'; // Light green for normal
+                    if (!p.vitals) {
+                      rowBackgroundColor = '#F5F5F5'; // Light gray for no data
+                    } else if (severity === 2) {
+                      rowBackgroundColor = '#FFEBEE'; // Light red for high risk
+                    } else if (severity === 1) {
+                      rowBackgroundColor = '#FFF4E5'; // Light orange for medium risk
+                    }
+                    
+                    return (
+                    <View key={p.profile.uid} style={[styles.tableRow, idx === displayPatients.length - 1 && styles.tableRowLast, { backgroundColor: rowBackgroundColor }]}>
+                      <View style={styles.cellName}>
+                        <Text style={styles.patientName} numberOfLines={1}>{p.profile.name}</Text>
+                        <Text style={styles.patientMeta} numberOfLines={1}>
+                          {p.vitals ? formatTime(p.vitals.timestamp) : 'No data'}
+                        </Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {p.vitals ? `${p.vitals.hr}` : '—'}
+                        </Text>
+                        <Text style={styles.cellUnit}>bpm</Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
+                        </Text>
+                        <Text style={styles.cellUnit}>mmHg</Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.cellStatus}>
+                        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+                          <Text style={styles.statusBadgeText}>{statusText}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  )})}
+                </View>
+              )}}
+            />
+            {patientPages.length > 1 && (
+              <View style={styles.paginationHint}>
+                <Text style={styles.paginationText}>← Swipe to see more patients →</Text>
               </View>
             )}
-          />
+          </View>
         )}
+        <Button
+          title="View All Patients"
+          variant="outline"
+          onPress={() => navigation.navigate('DoctorPatients')}
+          style={styles.buttonSpace}
+        />
       </View>
 
     </ScreenContainer>
@@ -379,10 +603,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.primary,
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -396,20 +620,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   heroSubtitle: {
-    color: '#E0E4FF',
+    color: '#FDF0F0',
     marginBottom: spacing.xs,
   },
   heroCaption: {
-    color: '#CBD0FF',
+    color: '#FFE5E5',
     fontSize: typography.small,
   },
   heroBadge: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  heroProfileImage: {
+    width: 64,
+    height: 64,
   },
   heroIcon: {
     fontSize: 28,
@@ -429,11 +658,19 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   headerSignOut: {
-    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
   },
   headerActionIcon: {
     fontSize: 16,
     marginRight: spacing.xs,
+  },
+  headerQRImage: {
+    width: 16,
+    height: 16,
+    marginRight: spacing.xs,
+    transform: [{ scale: 2.5 }],
   },
   headerActionLabel: {
     fontSize: typography.small,
@@ -444,6 +681,11 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     fontWeight: '600',
     color: colors.white,
+  },
+  headerLogoutImage: {
+    width: 24,
+    height: 24,
+    transform: [{ scale: 1.8 }],
   },
   alertCard: {
     backgroundColor: '#FFF4F3',
@@ -565,7 +807,7 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: 0,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   card: {
@@ -580,10 +822,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   statCard: {
-    backgroundColor: '#EDF0FF',
+    backgroundColor: '#FDECEE',
   },
   statCardAlt: {
-    backgroundColor: '#FCE7E7',
+    backgroundColor: '#EFE9FF',
   },
   cardLabel: {
     color: colors.textSecondary,
@@ -597,7 +839,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     padding: spacing.md,
     borderRadius: radii.lg,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -615,9 +857,36 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
+  cardAppointments: {
+    backgroundColor: '#E8F7F4',
+  },
+  cardPatientsVitals: {
+    backgroundColor: '#FFF9E6',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  emptyStateText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  emptyStateHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  tableContainer: {
+    marginTop: spacing.sm,
+  },
   tablePage: {
-    width: 340,
-    paddingHorizontal: spacing.sm,
+    width: 520,
   },
   apptRow: {
     flexDirection: 'row',
@@ -643,38 +912,92 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingVertical: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E0E0E0',
-    backgroundColor: '#F3F4FF',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 2,
+    borderBottomColor: '#FFC107',
+    backgroundColor: '#FFFBF0',
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: spacing.xs,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E0E0E0',
-    backgroundColor: colors.white,
+    borderBottomColor: 'rgba(255, 193, 7, 0.2)',
+    // backgroundColor will be set dynamically based on patient status
+  },
+  tableRowLast: {
+    borderBottomWidth: 0,
+    borderBottomLeftRadius: radii.md,
+    borderBottomRightRadius: radii.md,
   },
   headerCell: {
-    flex: 1,
     fontWeight: '700',
+    fontSize: typography.small,
     color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   cellName: {
-    flex: 2,
+    flex: 0.6,
+    paddingRight: spacing.xs,
+  },
+  cellVital: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellStatus: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cellValue: {
-    flex: 1,
+    fontSize: typography.small,
+    fontWeight: '700',
     color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  cellUnit: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.white,
   },
   patientName: {
     fontWeight: '700',
+    fontSize: typography.small,
     color: colors.textPrimary,
+    marginBottom: 1,
   },
   patientMeta: {
+    fontSize: 11,
     color: colors.textSecondary,
+  },
+  paginationHint: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  paginationText: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   patientVitals: {
     alignItems: 'flex-end',
