@@ -73,8 +73,13 @@ export const signInWithGoogleNative = async (): Promise<User> => {
   ensureGoogleConfigured();
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   const result = await GoogleSignin.signIn();
-  if (!result.idToken) {
+  let idToken = result.idToken;
+  if (!idToken) {
+    const tokens = await GoogleSignin.getTokens();
+    idToken = tokens?.idToken;
+  }
+  if (!idToken) {
     throw new Error('Missing Google ID token');
   }
-  return signInWithGoogle(result.idToken);
+  return signInWithGoogle(idToken);
 };
