@@ -185,11 +185,11 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     ptt: 0,
     ecg: 0,
     maternal_health_score: 100,
-    anemia_risk: 'High',
-    preeclampsia_risk: 'Moderate',
+    anemia_risk: 'Low',
+    preeclampsia_risk: 'Low',
     rhythm: 'Normal',
     arrhythmia_alert: false,
-    anemia_alert: true,
+    anemia_alert: false,
     preeclampsia_alert: false,
   };
   const displayVitals = {

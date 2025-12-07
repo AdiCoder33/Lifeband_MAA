@@ -1,8 +1,9 @@
 import Constants from 'expo-constants';
 import { FirebaseOptions, getApps, initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 type FirebaseConfigShape = FirebaseOptions & { measurementId?: string };
 
@@ -69,7 +70,9 @@ const firebaseConfig = resolveFirebaseConfig();
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
-const authInstance = getAuth(app);
+const authInstance = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+});
 
 const firestoreInstance = initializeFirestore(app, {
   experimentalForceLongPolling: true,
