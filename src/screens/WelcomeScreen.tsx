@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import GLModel from '../components/GLModel';
 import ScreenContainer from '../components/ScreenContainer';
 import { AuthStackParamList } from '../types/navigation';
@@ -8,6 +9,27 @@ import { colors, spacing, typography, radii } from '../theme/theme';
 import { useGoogleAuth } from '../services/authService';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
+
+const GoogleIcon = () => (
+  <Svg width={24} height={24} viewBox="0 0 24 24">
+    <Path
+      d="M23.49 12.27c0-.82-.07-1.64-.21-2.43H12v4.61h6.44c-.28 1.49-1.12 2.75-2.37 3.6v3h3.82c2.23-2.06 3.5-5.1 3.5-8.78z"
+      fill="#4285F4"
+    />
+    <Path
+      d="M12 24c3.18 0 5.85-1.05 7.8-2.85l-3.82-3c-1.06.72-2.43 1.14-3.98 1.14-3.06 0-5.66-2.07-6.59-4.86H1.5v3.05C3.44 21.33 7.42 24 12 24z"
+      fill="#34A853"
+    />
+    <Path
+      d="M5.41 14.43A7.18 7.18 0 0 1 4.98 12c0-.85.15-1.68.42-2.43V6.52H1.5A11.96 11.96 0 0 0 0 12c0 1.9.45 3.69 1.5 5.48l3.91-3.05z"
+      fill="#FBBC05"
+    />
+    <Path
+      d="M12 4.75c1.74 0 3.3.6 4.53 1.78l3.38-3.38C17.82 1.16 15.15 0 12 0 7.42 0 3.44 2.67 1.5 6.52l3.9 3.05C6.34 6.82 8.94 4.75 12 4.75z"
+      fill="#EA4335"
+    />
+  </Svg>
+);
 
 const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const { request, response, promptAsync, signInWithGoogleResponse } = useGoogleAuth();
@@ -111,6 +133,11 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
             (disabled || loading) && styles.pressableDisabled,
           ]}
         >
+          {variant === 'google' && !loading && (
+            <View style={styles.googleIconContainer}>
+              <GoogleIcon />
+            </View>
+          )}
           <Text style={variant === 'outline' || variant === 'google' ? styles.buttonLabelPrimary : styles.buttonLabel}>
             {loading ? 'Loading...' : label}
           </Text>
@@ -266,6 +293,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
   },
   pressableOutline: {
     backgroundColor: colors.white,
@@ -282,6 +310,9 @@ const styles = StyleSheet.create({
   },
   pressableDisabled: {
     opacity: 0.5,
+  },
+  googleIconContainer: {
+    marginRight: spacing.sm,
   },
   buttonLabel: {
     color: colors.white,

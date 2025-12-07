@@ -67,13 +67,21 @@ export const subscribeToLatestVitals = (
   callback: (sample: VitalsSample | null) => void,
 ) => {
   const q = query(vitalsCollectionRef(userId), orderBy('timestamp', 'desc'), limit(1));
-  return onSnapshot(q, (snap) => {
-    if (snap.empty) {
+  return onSnapshot(
+    q,
+    { includeMetadataChanges: false }, // Only trigger on actual data changes, not metadata
+    (snap) => {
+      if (snap.empty) {
+        callback(null);
+        return;
+      }
+      callback(snap.docs[0].data());
+    },
+    (error) => {
+      console.error('Error in vitals subscription:', error);
       callback(null);
-      return;
     }
-    callback(snap.docs[0].data());
-  });
+  );
 };
 
 export const subscribeToVitalsHistory = (

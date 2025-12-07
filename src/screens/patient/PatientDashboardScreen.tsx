@@ -10,7 +10,7 @@ import { PatientStackParamList } from '../../types/navigation';
 import { format } from 'date-fns';
 import { getDoctorForPatient } from '../../services/doctorPatientService';
 import { auth, firestore } from '../../services/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { signOutUser } from '../../services/authService';
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientHome'> & {
@@ -64,12 +64,28 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const [patientProfile, setPatientProfile] = useState<UserProfile | null>(profile || null);
 
   const handleSignOut = useCallback(async () => {
-    try {
-      await signOutUser();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Sign out failed', message);
-    }
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOutUser();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Please try again.';
+              Alert.alert('Sign out failed', message);
+            }
+          },
+        },
+      ],
+    );
   }, []);
 
   const handleDoctorIconPress = useCallback(() => {
@@ -178,44 +194,29 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       : colors.muted;
 
   const usingSampleVitals = !latestVitals;
-  const baselineVitals = {
-    hr: 78,
-    spo2: 98,
-    bp_sys: 110,
-    bp_dia: 72,
-    hrv: 70,
-    ptt: 0,
-    ecg: 0,
-    maternal_health_score: 100,
-    anemia_risk: 'High',
-    preeclampsia_risk: 'Moderate',
-    rhythm: 'Normal',
-    arrhythmia_alert: false,
-    anemia_alert: true,
-    preeclampsia_alert: false,
-  };
+  
   const displayVitals = {
-    hr: latestVitals?.hr ?? baselineVitals.hr,
-    spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
-    bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
-    bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
-    hrv: latestVitals?.hrv ?? latestVitals?.hrv_sdnn ?? baselineVitals.hrv,
-    ptt: latestVitals?.ptt ?? baselineVitals.ptt,
-    ecg: latestVitals?.ecg ?? baselineVitals.ecg,
-    maternal_health_score: latestVitals?.maternal_health_score ?? baselineVitals.maternal_health_score,
-    anemia_risk: latestVitals?.anemia_risk ?? baselineVitals.anemia_risk,
-    preeclampsia_risk: latestVitals?.preeclampsia_risk ?? baselineVitals.preeclampsia_risk,
-    rhythm: latestVitals?.rhythm ?? baselineVitals.rhythm,
-    arrhythmia_alert: latestVitals?.arrhythmia_alert ?? baselineVitals.arrhythmia_alert,
-    anemia_alert: latestVitals?.anemia_alert ?? baselineVitals.anemia_alert,
-    preeclampsia_alert: latestVitals?.preeclampsia_alert ?? baselineVitals.preeclampsia_alert,
+    hr: latestVitals?.hr ?? 0,
+    spo2: latestVitals?.spo2 ?? 0,
+    bp_sys: latestVitals?.bp_sys ?? 0,
+    bp_dia: latestVitals?.bp_dia ?? 0,
+    hrv: latestVitals?.hrv ?? latestVitals?.hrv_sdnn ?? 0,
+    ptt: latestVitals?.ptt ?? 0,
+    ecg: latestVitals?.ecg ?? 0,
+    maternal_health_score: latestVitals?.maternal_health_score ?? 0,
+    anemia_risk: latestVitals?.anemia_risk ?? 'Low',
+    preeclampsia_risk: latestVitals?.preeclampsia_risk ?? 'Low',
+    rhythm: latestVitals?.rhythm ?? 'Normal',
+    arrhythmia_alert: latestVitals?.arrhythmia_alert ?? false,
+    anemia_alert: latestVitals?.anemia_alert ?? false,
+    preeclampsia_alert: latestVitals?.preeclampsia_alert ?? false,
     timestamp: latestVitals?.timestamp,
   };
 
   // Get IST time-based greeting
   const getGreeting = () => {
-    const istTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-    const hour = new Date(istTime).getHours();
+    const now = new Date();
+    const hour = now.getHours();
     
     if (hour >= 5 && hour < 12) {
       return {
@@ -401,7 +402,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         </View>
         <Text style={styles.meta}>
           {usingSampleVitals
-            ? 'Showing reference values until your LifeBand shares live readings.'
+            ? 'Connect your LifeBand to see live vitals.'
             : `Last sync ${formatTime(displayVitals.timestamp)}`}
         </Text>
         <Button
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 8,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -512,7 +513,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.card,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 10,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
@@ -797,6 +798,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderTopLeftRadius: 100,
     borderTopRightRadius: 100,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderTopColor: colors.secondary,
+    borderLeftColor: colors.secondary,
+    borderRightColor: colors.secondary,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
