@@ -505,7 +505,7 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
         <Text style={styles.title}>Vitals Trends</Text>
         {!hasRealData && (
           <View style={styles.exampleBadge}>
-            <Text style={styles.exampleBadgeText}>📊 Example Data - Connect your LifeBand for real readings</Text>
+            <Text style={styles.exampleBadgeText}>📊 Previous Data - Connect your LifeBand for real readings</Text>
           </View>
         )}
         <Text style={styles.chartSubtitle}>
@@ -519,9 +519,10 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
           {hrTrend.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
+              width={320}
               height={140}
-              padding={{ top: 12, bottom: 32, left: 42, right: 16 }}
-              domainPadding={{ x: 20, y: 0 }}
+              padding={{ top: 12, bottom: 32, left: 38, right: 12 }}
+              domainPadding={{ x: 15, y: 0 }}
               domain={{ y: [hrDomain.min, hrDomain.max] }}
             >
               <VictoryAxis
@@ -557,9 +558,10 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
           {spo2Trend.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
+              width={320}
               height={140}
-              padding={{ top: 12, bottom: 32, left: 42, right: 16 }}
-              domainPadding={{ x: 20, y: 0 }}
+              padding={{ top: 12, bottom: 32, left: 38, right: 12 }}
+              domainPadding={{ x: 15, y: 0 }}
               domain={{ y: [spo2Domain.min, spo2Domain.max] }}
             >
               <VictoryAxis
@@ -595,9 +597,10 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
           {bpTrends.sys.length >= 2 ? (
             <VictoryChart
               scale={{ x: 'time' }}
+              width={320}
               height={150}
-              padding={{ top: 20, bottom: 36, left: 42, right: 16 }}
-              domainPadding={{ x: 20, y: 0 }}
+              padding={{ top: 20, bottom: 36, left: 38, right: 12 }}
+              domainPadding={{ x: 15, y: 0 }}
               domain={{ y: [bpDomain.min, bpDomain.max] }}
             >
               <VictoryAxis
@@ -844,6 +847,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.06)',
     backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    overflow: 'hidden',
   },
   chartBlockTitle: {
     fontWeight: '600',

@@ -95,19 +95,21 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     navigation.setOptions({
       headerRight: () => (
         <View style={styles.navActions}>
-          <TouchableOpacity style={styles.navAction} onPress={handleDoctorIconPress}>
+          <TouchableOpacity style={styles.navActionButton} onPress={handleDoctorIconPress}>
             <Image 
               source={require('../../../assets/DoctorExchangeNavbar.png')} 
               style={styles.navDoctorImage}
               resizeMode="contain"
             />
+            <Text style={styles.navActionLabel}>Exchange</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navAction} onPress={() => navigation.navigate('LifeBand')}>
+          <TouchableOpacity style={styles.navActionButton} onPress={() => navigation.navigate('LifeBand')}>
             <Image 
               source={require('../../../assets/WatchNavbar.png')} 
               style={styles.navImage}
               resizeMode="contain"
             />
+            <Text style={styles.navActionLabel}>Connect</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navSignOutAction} onPress={handleSignOut}>
             <Image 
@@ -398,7 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -438,7 +440,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.card,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
@@ -646,9 +648,17 @@ const styles = StyleSheet.create({
   navActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  navActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radii.md,
+    backgroundColor: colors.card,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
   },
   navAction: {
     paddingHorizontal: spacing.xs,
@@ -657,9 +667,15 @@ const styles = StyleSheet.create({
   navIcon: {
     fontSize: 24,
   },
+  navActionLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
   navSignOutAction: {
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
   },
   navLabel: {
     color: colors.white,
@@ -685,6 +701,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     transform: [{ scale: 2.2 }],  // adjust zoom as needed
+    marginRight: spacing.sm,
   },
 });
 
