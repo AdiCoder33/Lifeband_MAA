@@ -194,7 +194,22 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       : colors.muted;
 
   const usingSampleVitals = !latestVitals;
-  
+  const baselineVitals = {
+    hr: 78,
+    spo2: 98,
+    bp_sys: 110,
+    bp_dia: 72,
+    hrv: 70,
+    ptt: 0,
+    ecg: 0,
+    maternal_health_score: 100,
+    anemia_risk: 'Low',
+    preeclampsia_risk: 'Low',
+    rhythm: 'Normal',
+    arrhythmia_alert: false,
+    anemia_alert: false,
+    preeclampsia_alert: false,
+  };
   const displayVitals = {
     hr: latestVitals?.hr ?? 0,
     spo2: latestVitals?.spo2 ?? 0,

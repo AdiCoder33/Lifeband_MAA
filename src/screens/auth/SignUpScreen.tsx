@@ -24,8 +24,8 @@ import ScreenContainer from '../../components/ScreenContainer';
 import TextInput from '../../components/TextInput';
 import { AuthStackParamList } from '../../types/navigation';
 import { colors, shadows, spacing, typography, radii } from '../../theme/theme';
-import { signUpWithEmail, useGoogleAuth } from '../../services/authService';
-import { createUserProfileFromAuth } from '../../services/userService';
+import { signUpWithEmail, signInWithGoogleNative } from '../../services/authService';
+import { createUserProfileFromAuth, getUserProfile } from '../../services/userService';
 import { UserRole } from '../../types/user';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
@@ -104,7 +104,6 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
   const [error, setError] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<'name' | 'email' | 'password' | 'confirm' | null>(null);
 
-  const { request, response, promptAsync, signInWithGoogleResponse } = useGoogleAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const formOpacity = useRef(new Animated.Value(0)).current;
@@ -119,21 +118,27 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
     ]).start();
   }, [formOpacity, formTranslate]);
 
-  useEffect(() => {
-    const handleGoogle = async () => {
-      if (!response) return;
-      try {
-        setGoogleLoading(true);
-        await signInWithGoogleResponse(response);
-      } catch (err) {
-        console.error(err);
-        setError('Google sign-in failed. Try again.');
-      } finally {
-        setGoogleLoading(false);
+  const handleGoogleSignUp = useCallback(async () => {
+    try {
+      setError(null);
+      setGoogleLoading(true);
+      const user = await signInWithGoogleNative();
+      if (!user) {
+        return;
       }
-    };
-    handleGoogle();
-  }, [response, signInWithGoogleResponse]);
+      const existingProfile = await getUserProfile(user.uid);
+      if (existingProfile) {
+        setError(`This Google account already exists. Signing you in as ${existingProfile.role}.`);
+        return;
+      }
+      await createUserProfileFromAuth(user, role, { name: user.displayName || '' });
+    } catch (err) {
+      console.error(err);
+      setError('Google sign-up failed. Try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [role]);
 
   const handleFieldFocus = useCallback((field: 'name' | 'email' | 'password' | 'confirm') => () => {
     setFocusedField(field);
@@ -314,7 +319,15 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
               {renderAnimatedButton('Create Account', 0, handleSubmit, 'primary', loading, loading)}
-              {renderAnimatedButton('Continue with Google', 1, () => promptAsync(), 'google', !request || googleLoading, googleLoading, !googleLoading ? <GoogleIcon /> : null)}
+              {renderAnimatedButton(
+                'Continue with Google',
+                1,
+                handleGoogleSignUp,
+                'google',
+                googleLoading,
+                googleLoading,
+                !googleLoading ? <GoogleIcon /> : null,
+              )}
 
               <Pressable onPress={() => navigation.navigate('SignIn')} style={styles.createAccountButton}>
                 <Text style={styles.createAccountText}>Already have an account? Sign In</Text>

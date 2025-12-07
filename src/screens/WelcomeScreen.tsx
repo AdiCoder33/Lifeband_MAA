@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import GLModel from '../components/GLModel';
@@ -6,7 +6,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import { AuthStackParamList } from '../types/navigation';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, spacing, typography, radii } from '../theme/theme';
-import { useGoogleAuth } from '../services/authService';
+import { signInWithGoogleNative } from '../services/authService';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
 
@@ -32,7 +32,6 @@ const GoogleIcon = () => (
 );
 
 const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
-  const { request, response, promptAsync, signInWithGoogleResponse } = useGoogleAuth();
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
 
@@ -41,23 +40,18 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const pulseScale = useRef(new Animated.Value(10)).current;
   const buttonScales = useMemo(() => [new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)], []);
 
-  useEffect(() => {
-    const handleGoogle = async () => {
-      if (!response) {
-        return;
-      }
-      try {
-        setLoadingGoogle(true);
-        await signInWithGoogleResponse(response);
-      } catch (error) {
-        console.error(error);
-        setGoogleError('Google sign-in failed. Please try again.');
-      } finally {
-        setLoadingGoogle(false);
-      }
-    };
-    handleGoogle();
-  }, [response, signInWithGoogleResponse]);
+  const handleGoogleSignIn = useCallback(async () => {
+    try {
+      setGoogleError(null);
+      setLoadingGoogle(true);
+      await signInWithGoogleNative();
+    } catch (error) {
+      console.error(error);
+      setGoogleError('Google sign-in failed. Please try again.');
+    } finally {
+      setLoadingGoogle(false);
+    }
+  }, []);
 
   useEffect(() => {
     Animated.parallel([
@@ -180,7 +174,7 @@ const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
         {renderAnimatedButton('Sign In', 0, () => navigation.navigate('SignIn'))}
         {renderAnimatedButton('Create Account', 1, () => navigation.navigate('SignUp'), 'outline')}
         <Text style={styles.separator}>or continue with</Text>
-        {renderAnimatedButton('Google', 2, () => promptAsync(), 'google', !request, loadingGoogle)}
+        {renderAnimatedButton('Google', 2, handleGoogleSignIn, 'google', loadingGoogle, loadingGoogle)}
         {googleError ? <Text style={styles.error}>{googleError}</Text> : null}
       </View>
     </ScreenContainer>
