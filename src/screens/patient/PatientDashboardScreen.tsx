@@ -12,6 +12,11 @@ import { getDoctorForPatient } from '../../services/doctorPatientService';
 import { auth, firestore } from '../../services/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { signOutUser } from '../../services/authService';
+import {
+  subscribeToLatestVitalsFeedback,
+  generateFeedbackFromLatestHour,
+} from '../../services/vitalsFeedbackService';
+import { VitalsFeedback } from '../../types/vitalsFeedback';
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientHome'> & {
   profile?: UserProfile | null;
@@ -62,6 +67,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const uid = auth.currentUser?.uid;
   const [doctorName, setDoctorName] = React.useState<string | null>(null);
   const [patientProfile, setPatientProfile] = useState<UserProfile | null>(profile || null);
+  const [vitalsFeedback, setVitalsFeedback] = useState<VitalsFeedback | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -126,6 +134,58 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   useEffect(() => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
+
+  // Subscribe to latest vitals feedback
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeToLatestVitalsFeedback(uid, setVitalsFeedback);
+    return () => unsub();
+  }, [uid]);
+
+  // Generate feedback based on the latest hour that has data
+  useEffect(() => {
+    let cancelled = false;
+    const maybeGenerate = async () => {
+      if (!uid) return;
+      if (feedbackLoading) return;
+      setFeedbackLoading(true);
+      try {
+        if (!cancelled) {
+          setFeedbackError(null);
+          const res = await generateFeedbackFromLatestHour(uid);
+          if (!res) {
+            setFeedbackError('No vitals found in the latest hour.');
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+        }
+      } finally {
+        if (!cancelled) setFeedbackLoading(false);
+      }
+    };
+    maybeGenerate();
+    return () => {
+      cancelled = true;
+    };
+  }, [uid, vitalsFeedback?.windowEnd, feedbackLoading]);
+
+  const handleRefreshFeedback = useCallback(async () => {
+    if (!uid || feedbackLoading) return;
+    setFeedbackLoading(true);
+    try {
+      setFeedbackError(null);
+      const res = await generateFeedbackFromLatestHour(uid);
+      if (!res) {
+        setFeedbackError('No vitals found in the last hour.');
+      }
+    } catch (e: any) {
+      setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, [uid, feedbackLoading]);
 
   // Keep patient profile fresh to reflect doctor link changes
   useEffect(() => {
@@ -410,6 +470,30 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           onPress={() => navigation.navigate('VitalsHistory')}
           style={styles.historyButton}
         />
+      </View>
+
+      <View style={[styles.card, styles.cardFeedback]}>
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Hourly Vitals Feedback</Text>
+            <Text style={styles.cardSubtitle}>AI summary of your last hour</Text>
+          </View>
+          <View style={[styles.badge, styles[`badge_${vitalsFeedback?.riskLevel || 'stable'}`]]}>
+            <Text style={styles.badgeText}>
+              {feedbackLoading ? 'Updating' : vitalsFeedback?.riskLevel || 'Stable'}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.feedbackText}>
+          {feedbackLoading && !vitalsFeedback
+            ? 'Generating feedback...'
+            : feedbackError
+            ? feedbackError
+            : vitalsFeedback?.feedback || 'Feedback will appear here after an hour of vitals.'}
+        </Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={handleRefreshFeedback} disabled={feedbackLoading}>
+          <Text style={styles.refreshText}>{feedbackLoading ? 'Refreshing...' : 'Refresh feedback'}</Text>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity
@@ -779,6 +863,40 @@ const styles = StyleSheet.create({
   statusText: {
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  cardFeedback: {
+    backgroundColor: '#F5F8FF',
+  },
+  feedbackText: {
+    marginTop: spacing.sm,
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
+  badge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 16,
+  },
+  badgeText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: typography.small,
+  },
+  refreshBtn: {
+    marginTop: spacing.sm,
+  },
+  refreshText: {
+    color: colors.secondary,
+    fontWeight: '700',
+  },
+  badge_stable: {
+    backgroundColor: colors.healthy,
+  },
+  badge_needs_attention: {
+    backgroundColor: colors.attention,
+  },
+  badge_critical: {
+    backgroundColor: colors.critical,
   },
   meta: {
     color: colors.textSecondary,
