@@ -182,15 +182,31 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     bp_sys: 110,
     bp_dia: 72,
     hrv: 70,
-    skinTemp: 36.5,
+    ptt: 0,
+    ecg: 0,
+    maternal_health_score: 100,
+    anemia_risk: 'High',
+    preeclampsia_risk: 'Moderate',
+    rhythm: 'Normal',
+    arrhythmia_alert: false,
+    anemia_alert: true,
+    preeclampsia_alert: false,
   };
   const displayVitals = {
     hr: latestVitals?.hr ?? baselineVitals.hr,
     spo2: latestVitals?.spo2 ?? baselineVitals.spo2,
     bp_sys: latestVitals?.bp_sys ?? baselineVitals.bp_sys,
     bp_dia: latestVitals?.bp_dia ?? baselineVitals.bp_dia,
-    hrv: latestVitals?.hrv ?? baselineVitals.hrv,
-    skinTemp: latestVitals?.skinTemp ?? baselineVitals.skinTemp,
+    hrv: latestVitals?.hrv ?? latestVitals?.hrv_sdnn ?? baselineVitals.hrv,
+    ptt: latestVitals?.ptt ?? baselineVitals.ptt,
+    ecg: latestVitals?.ecg ?? baselineVitals.ecg,
+    maternal_health_score: latestVitals?.maternal_health_score ?? baselineVitals.maternal_health_score,
+    anemia_risk: latestVitals?.anemia_risk ?? baselineVitals.anemia_risk,
+    preeclampsia_risk: latestVitals?.preeclampsia_risk ?? baselineVitals.preeclampsia_risk,
+    rhythm: latestVitals?.rhythm ?? baselineVitals.rhythm,
+    arrhythmia_alert: latestVitals?.arrhythmia_alert ?? baselineVitals.arrhythmia_alert,
+    anemia_alert: latestVitals?.anemia_alert ?? baselineVitals.anemia_alert,
+    preeclampsia_alert: latestVitals?.preeclampsia_alert ?? baselineVitals.preeclampsia_alert,
     timestamp: latestVitals?.timestamp,
   };
 
@@ -294,33 +310,89 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       <View style={[styles.card, styles.cardMint]}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.cardTitle}>Vitals Overview</Text>
-            <Text style={styles.cardSubtitle}>Pulse, oxygen, and pressure at a glance</Text>
+            <Text style={styles.cardTitle}>Real-Time Vitals</Text>
+            <Text style={styles.cardSubtitle}>Live monitoring from your LifeBand</Text>
           </View>
         </View>
-        <View style={styles.vitalsPanelRow}>
-          <View style={styles.vitalsPanel}>
-            <Text style={styles.vitalsPanelHeading}>Heart Rate</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.hr} bpm</Text>
-            <View style={styles.vitalsDivider} />
-            <Text style={styles.vitalsPanelHeading}>SpO₂</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.spo2}%</Text>
+
+        {/* Primary Vitals Row: HR & SpO2 */}
+        <View style={styles.vitalsRow}>
+          <View style={styles.vitalTilePrimary}>
+            <Text style={styles.vitalLabel}>Heart Rate</Text>
+            <Text style={styles.vitalValueLarge}>{displayVitals.hr}</Text>
+            <Text style={styles.vitalUnit}>bpm</Text>
           </View>
-          <View style={[styles.vitalsPanel, styles.vitalsPanelAccent]}>
-            <Text style={styles.vitalsPanelHeading}>Blood Pressure</Text>
-            <Text style={styles.vitalsPanelValue}>
-              {displayVitals.bp_sys}/{displayVitals.bp_dia} mmHg
+          <View style={[styles.vitalTilePrimary, styles.vitalTileBlue]}>
+            <Text style={styles.vitalLabel}>SpO₂</Text>
+            <Text style={styles.vitalValueLarge}>{displayVitals.spo2}</Text>
+            <Text style={styles.vitalUnit}>%</Text>
+          </View>
+        </View>
+
+        {/* Blood Pressure Row */}
+        <View style={styles.vitalsRow}>
+          <View style={styles.vitalTileSecondary}>
+            <Text style={styles.vitalLabel}>Blood Pressure</Text>
+            <Text style={styles.vitalValueMedium}>{displayVitals.bp_sys}/{displayVitals.bp_dia}</Text>
+            <Text style={styles.vitalUnit}>mmHg</Text>
+          </View>
+        </View>
+
+        {/* Advanced Metrics Row: HRV & PTT (smaller, side by side) */}
+        <View style={styles.vitalsRow}>
+          <View style={styles.vitalTileCompact}>
+            <Text style={styles.vitalLabelSmall}>HRV</Text>
+            <Text style={styles.vitalValueSmall}>{displayVitals.hrv}</Text>
+            <Text style={styles.vitalUnitSmall}>ms</Text>
+          </View>
+          <View style={[styles.vitalTileCompact, styles.vitalTileAmber]}>
+            <Text style={styles.vitalLabelSmall}>PTT</Text>
+            <Text style={styles.vitalValueSmall}>{displayVitals.ptt}</Text>
+            <Text style={styles.vitalUnitSmall}>ms</Text>
+          </View>
+        </View>
+
+        {/* ECG Raw Value (compact) */}
+        <View style={styles.vitalsRow}>
+          <View style={[styles.vitalTileCompact, styles.vitalTilePurple, { flex: 1 }]}>
+            <Text style={styles.vitalLabelSmall}>ECG Signal</Text>
+            <Text style={styles.vitalValueSmall}>{displayVitals.ecg}</Text>
+            <Text style={styles.vitalUnitSmall}>raw</Text>
+          </View>
+        </View>
+
+        {/* Health Alerts & Scores Row */}
+        <View style={styles.healthMetricsRow}>
+          <View style={styles.healthMetricTile}>
+            <Text style={styles.healthMetricLabel}>Maternal Health</Text>
+            <Text style={[styles.healthMetricScore, { color: displayVitals.maternal_health_score >= 80 ? colors.healthy : displayVitals.maternal_health_score >= 60 ? colors.attention : colors.muted }]}>
+              {displayVitals.maternal_health_score}%
             </Text>
-            <Text style={styles.vitalsPanelHint}>Systolic / Diastolic</Text>
           </View>
-          <View style={[styles.vitalsPanel, styles.vitalsPanelSoft]}>
-            <Text style={styles.vitalsPanelHeading}>HRV</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.hrv} ms</Text>
-            <View style={styles.vitalsDivider} />
-            <Text style={styles.vitalsPanelHeading}>Skin Temp</Text>
-            <Text style={styles.vitalsPanelValue}>{displayVitals.skinTemp} °C</Text>
+          <View style={styles.healthMetricTile}>
+            <Text style={styles.healthMetricLabel}>Rhythm</Text>
+            <Text style={[styles.healthMetricValue, { color: displayVitals.arrhythmia_alert ? colors.muted : colors.healthy }]}>
+              {displayVitals.rhythm}
+            </Text>
           </View>
         </View>
+
+        {/* Risk Assessment Row */}
+        <View style={styles.riskRow}>
+          <View style={[styles.riskTile, displayVitals.anemia_alert && styles.riskAlert]}>
+            <Text style={styles.riskLabel}>Anemia</Text>
+            <Text style={[styles.riskValue, displayVitals.anemia_alert && { color: colors.muted }]}>
+              {displayVitals.anemia_risk}
+            </Text>
+          </View>
+          <View style={[styles.riskTile, displayVitals.preeclampsia_alert && styles.riskAlert]}>
+            <Text style={styles.riskLabel}>Preeclampsia</Text>
+            <Text style={[styles.riskValue, displayVitals.preeclampsia_alert && { color: colors.muted }]}>
+              {displayVitals.preeclampsia_risk}
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
           <Text style={styles.statusText}>{statusLabel}</Text>
@@ -532,49 +604,164 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     alignSelf: 'flex-start',
   },
-  vitalsPanelRow: {
+  vitalsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
-  vitalsPanel: {
-    width: '32%',
+  vitalTilePrimary: {
+    flex: 1,
     backgroundColor: colors.white,
     borderRadius: radii.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  vitalsPanelAccent: {
-    backgroundColor: '#F1F3FF',
+  vitalTileBlue: {
+    backgroundColor: colors.white,
     borderColor: colors.secondary,
   },
-  vitalsPanelSoft: {
-    backgroundColor: '#F4FBF8',
-    borderColor: 'rgba(77, 182, 172, 0.4)',
+  vitalTileSecondary: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  vitalsPanelHeading: {
-    color: colors.textSecondary,
+  vitalTileGreen: {
+    backgroundColor: colors.white,
+    borderColor: colors.healthy,
+  },
+  vitalTileCompact: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vitalTilePurple: {
+    backgroundColor: colors.white,
+    borderColor: colors.accent,
+  },
+  vitalTileAmber: {
+    backgroundColor: colors.white,
+    borderColor: colors.attention,
+  },
+  vitalLabel: {
     fontSize: typography.small,
     fontWeight: '600',
-  },
-  vitalsPanelValue: {
-    color: colors.textPrimary,
-    fontSize: typography.subheading,
-    fontWeight: '700',
-    marginTop: spacing.xs,
-  },
-  vitalsPanelHint: {
-    marginTop: spacing.xs,
     color: colors.textSecondary,
-    fontSize: typography.small,
+    marginBottom: spacing.xs,
   },
-  vitalsDivider: {
-    height: 1,
-    backgroundColor: 'rgba(40, 53, 147, 0.1)',
-    marginVertical: spacing.sm,
+  vitalLabelSmall: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  vitalValueLarge: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  vitalValueMedium: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  vitalValueSmall: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  vitalUnit: {
+    fontSize: typography.small,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  vitalUnitSmall: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  healthMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  healthMetricTile: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.1)',
+    alignItems: 'center',
+  },
+  healthMetricLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  healthMetricScore: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.healthy,
+  },
+  healthMetricValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  riskRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  riskTile: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 53, 147, 0.1)',
+    alignItems: 'center',
+  },
+  riskAlert: {
+    backgroundColor: '#FFEBEE',
+    borderColor: colors.muted,
+    borderWidth: 1.5,
+  },
+  riskLabel: {
+    fontSize: typography.small,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  riskValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.healthy,
   },
   statusRow: {
     flexDirection: 'row',
