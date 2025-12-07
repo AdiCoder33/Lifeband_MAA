@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList, Linking } from 'react-native';
+import { Alert, StyleSheet, Text, View, TouchableOpacity, FlatList, Linking, Image } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -40,6 +40,39 @@ type ActiveEntry = {
 const toMillis = (timestamp?: number) => {
   if (!timestamp) return 0;
   return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
+};
+
+const formatTime = (timestamp?: number) => {
+  if (!timestamp) return '—';
+  const asMs = timestamp > 2_000_000_000 ? timestamp : timestamp * 1000;
+  return format(new Date(asMs), 'HH:mm');
+};
+
+const getGreeting = () => {
+  const istTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+  const hour = new Date(istTime).getHours();
+  
+  if (hour >= 5 && hour < 12) {
+    return {
+      greeting: 'Good Morning',
+      caption: "Start your day empowering mothers and babies with care."
+    };
+  } else if (hour >= 12 && hour < 17) {
+    return {
+      greeting: 'Good Afternoon',
+      caption: "Your dedication brings health and hope to families."
+    };
+  } else if (hour >= 17 && hour < 21) {
+    return {
+      greeting: 'Good Evening',
+      caption: "Review the day's insights and prepare for tomorrow."
+    };
+  } else {
+    return {
+      greeting: 'Good Night',
+      caption: "Rest well, Doctor. Your patients are in good hands."
+    };
+  }
 };
 
 const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
@@ -148,11 +181,19 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       headerRight: () => (
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.headerActionButton} onPress={() => navigation.navigate('DoctorQR')}>
-            <Text style={styles.headerActionIcon}>🔗</Text>
+            <Image 
+              source={require('../../../assets/QRCode.png')} 
+              style={styles.headerQRImage}
+              resizeMode="contain"
+            />
             <Text style={styles.headerActionLabel}>Share QR</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.headerActionButton, styles.headerSignOut]} onPress={handleSignOut}>
-            <Text style={styles.headerActionLabelAlt}>Sign out</Text>
+          <TouchableOpacity style={styles.headerSignOut} onPress={handleSignOut}>
+            <Image 
+              source={require('../../../assets/Logout.png')} 
+              style={styles.headerLogoutImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
       ),
@@ -213,16 +254,22 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     };
   }, [uid]);
 
+  const { greeting, caption } = getGreeting();
+
   return (
-    <ScreenContainer>
+    <ScreenContainer scrollable>
       <View style={styles.heroCard}>
         <View style={styles.heroTextBlock}>
-          <Text style={styles.heroTitle}>Hello, Dr. {profile?.name || 'Doctor'}</Text>
+          <Text style={styles.heroTitle}>{greeting}, Dr. {profile?.name || 'Doctor'}</Text>
           <Text style={styles.heroSubtitle}>{profile?.doctorData?.hospital || 'Your clinic'}</Text>
-          <Text style={styles.heroCaption}>Keep your patients close and visits organized.</Text>
+          <Text style={styles.heroCaption}>{caption}</Text>
         </View>
         <View style={styles.heroBadge}>
-          <Text style={styles.heroIcon}>🩺</Text>
+          <Image 
+            source={require('../../../assets/Doctor.png')} 
+            style={styles.heroProfileImage}
+            resizeMode="cover"
+          />
         </View>
       </View>
 
@@ -294,12 +341,12 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
         <View style={[styles.statCardAlt, styles.card]}>
-          <Text style={styles.cardLabel}>Upcoming</Text>
+          <Text style={styles.cardLabel}>Upcoming Appointments</Text>
           <Text style={styles.cardValue}>{upcoming.length}</Text>
         </View>
       </View>
 
-      <View style={styles.cardFull}>
+      <View style={[styles.cardFull, styles.cardAppointments]}>
         <Text style={styles.cardTitle}>Next Appointments</Text>
         {nextAppointments.length === 0 ? (
           <Text style={styles.cardCopy}>No upcoming appointments.</Text>
@@ -319,48 +366,121 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         <Button title="View All Appointments" variant="outline" onPress={() => navigation.navigate('DoctorAppointments')} />
       </View>
 
-      <View style={styles.cardFull}>
+      <View style={[styles.cardFull, styles.cardPatientsVitals]}>
         <Text style={styles.cardTitle}>Patients & Vitals</Text>
+        <Text style={styles.cardCopy}>Monitor vitals from all your linked patients at a glance.</Text>
         {patientSummaries.length === 0 ? (
-          <Text style={styles.cardCopy}>No linked patients yet.</Text>
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateIcon}>👥</Text>
+            <Text style={styles.emptyStateText}>No linked patients yet</Text>
+            <Text style={styles.emptyStateHint}>Share your QR code to connect with patients</Text>
+          </View>
         ) : (
-          <FlatList
-            data={patientPages}
-            keyExtractor={(_, idx) => `page-${idx}`}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item: page }) => (
-              <View style={styles.tablePage}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.headerCell, styles.cellName]}>Patient</Text>
-                  <Text style={styles.headerCell}>BP</Text>
-                  <Text style={styles.headerCell}>HR</Text>
-                  <Text style={styles.headerCell}>HRV</Text>
-                  <Text style={styles.headerCell}>SpO₂</Text>
-                </View>
-                {page.map((p) => (
-                  <View key={p.profile.uid} style={styles.tableRow}>
+          <View style={styles.tableContainer}>
+            <FlatList
+              data={patientPages}
+              keyExtractor={(_, idx) => `page-${idx}`}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              renderItem={({ item: page }) => (
+                <View style={styles.tablePage}>
+                  <View style={styles.tableHeader}>
                     <View style={styles.cellName}>
-                      <Text style={styles.patientName}>{p.profile.name}</Text>
-                      <Text style={styles.patientMeta}>{p.profile.email}</Text>
+                      <Text style={styles.headerCell}>Patient</Text>
                     </View>
-                    <Text style={styles.cellValue}>
-                      {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
-                    </Text>
-                    <Text style={styles.cellValue}>{p.vitals ? p.vitals.hr : '—'}</Text>
-                    <Text style={styles.cellValue}>
-                      {typeof p.vitals?.hrv === 'number' ? p.vitals.hrv : '—'}
-                    </Text>
-                    <Text style={styles.cellValue}>
-                      {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
-                    </Text>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>HR</Text>
+                    </View>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>BP</Text>
+                    </View>
+                    <View style={styles.cellVital}>
+                      <Text style={styles.headerCell}>SpO₂</Text>
+                    </View>
+                    <View style={styles.cellStatus}>
+                      <Text style={styles.headerCell}>Status</Text>
+                    </View>
                   </View>
-                ))}
+                  {page.map((p, idx) => {
+                    // Check all conditions from vitals data
+                    const conditions: string[] = [];
+                    
+                    if (p.vitals) {
+                      // Check Arrhythmia
+                      if (p.vitals.arrhythmia_alert) {
+                        conditions.push('Arrhythmia');
+                      } else if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal') {
+                        conditions.push(p.vitals.rhythm);
+                      }
+                      
+                      // Check Anemia
+                      if (p.vitals.anemia_alert) {
+                        conditions.push('Anemia');
+                      } else if (p.vitals.anemia_risk && p.vitals.anemia_risk !== 'Low') {
+                        conditions.push(`${p.vitals.anemia_risk} Anemia`);
+                      }
+                      
+                      // Check Preeclampsia
+                      if (p.vitals.preeclampsia_alert) {
+                        conditions.push('Preeclampsia');
+                      } else if (p.vitals.preeclampsia_risk && p.vitals.preeclampsia_risk !== 'Low') {
+                        conditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
+                      }
+                    }
+                    
+                    // Determine status - if any critical condition exists, show it; otherwise Normal
+                    const statusText = !p.vitals ? 'No Data' : conditions.length > 0 ? conditions[0] : 'Normal';
+                    const statusColor = !p.vitals ? colors.muted : conditions.length > 0 ? colors.critical : colors.healthy;
+                    
+                    return (
+                    <View key={p.profile.uid} style={[styles.tableRow, idx === page.length - 1 && styles.tableRowLast]}>
+                      <View style={styles.cellName}>
+                        <Text style={styles.patientName} numberOfLines={1}>{p.profile.name}</Text>
+                        <Text style={styles.patientMeta} numberOfLines={1}>
+                          {p.vitals ? formatTime(p.vitals.timestamp) : 'No data'}
+                        </Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {p.vitals ? `${p.vitals.hr}` : '—'}
+                        </Text>
+                        <Text style={styles.cellUnit}>bpm</Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {p.vitals ? `${p.vitals.bp_sys}/${p.vitals.bp_dia}` : '—'}
+                        </Text>
+                        <Text style={styles.cellUnit}>mmHg</Text>
+                      </View>
+                      <View style={styles.cellVital}>
+                        <Text style={styles.cellValue}>
+                          {typeof p.vitals?.spo2 === 'number' ? `${p.vitals.spo2}%` : '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.cellStatus}>
+                        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+                          <Text style={styles.statusBadgeText}>{statusText}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  )})}
+                </View>
+              )}
+            />
+            {patientPages.length > 1 && (
+              <View style={styles.paginationHint}>
+                <Text style={styles.paginationText}>← Swipe to see more patients →</Text>
               </View>
             )}
-          />
+          </View>
         )}
+        <Button
+          title="View All Patients"
+          variant="outline"
+          onPress={() => navigation.navigate('DoctorPatients')}
+          style={styles.buttonSpace}
+        />
       </View>
 
     </ScreenContainer>
@@ -379,10 +499,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: '#0D7377',
     padding: spacing.lg,
     borderRadius: radii.lg,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   heroTextBlock: {
@@ -407,9 +527,14 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  heroProfileImage: {
+    width: 64,
+    height: 64,
   },
   heroIcon: {
     fontSize: 28,
@@ -429,11 +554,19 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   headerSignOut: {
-    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
   },
   headerActionIcon: {
     fontSize: 16,
     marginRight: spacing.xs,
+  },
+  headerQRImage: {
+    width: 16,
+    height: 16,
+    marginRight: spacing.xs,
+    transform: [{ scale: 2.5 }],
   },
   headerActionLabel: {
     fontSize: typography.small,
@@ -444,6 +577,11 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     fontWeight: '600',
     color: colors.white,
+  },
+  headerLogoutImage: {
+    width: 24,
+    height: 24,
+    transform: [{ scale: 1.8 }],
   },
   alertCard: {
     backgroundColor: '#FFF4F3',
@@ -565,7 +703,7 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: 0,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   card: {
@@ -580,10 +718,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   statCard: {
-    backgroundColor: '#EDF0FF',
+    backgroundColor: '#FDECEE',
   },
   statCardAlt: {
-    backgroundColor: '#FCE7E7',
+    backgroundColor: '#EFE9FF',
   },
   cardLabel: {
     color: colors.textSecondary,
@@ -597,7 +735,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     padding: spacing.md,
     borderRadius: radii.lg,
-    marginHorizontal: 0,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -615,9 +753,36 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
+  cardAppointments: {
+    backgroundColor: '#E8F7F4',
+  },
+  cardPatientsVitals: {
+    backgroundColor: '#FFF9E6',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  emptyStateText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  emptyStateHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  tableContainer: {
+    marginTop: spacing.sm,
+  },
   tablePage: {
-    width: 340,
-    paddingHorizontal: spacing.sm,
+    width: 500,
   },
   apptRow: {
     flexDirection: 'row',
@@ -643,38 +808,92 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingVertical: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E0E0E0',
-    backgroundColor: '#F3F4FF',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 2,
+    borderBottomColor: '#FFC107',
+    backgroundColor: '#FFFBF0',
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: spacing.xs,
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E0E0E0',
+    borderBottomColor: 'rgba(255, 193, 7, 0.2)',
     backgroundColor: colors.white,
   },
+  tableRowLast: {
+    borderBottomWidth: 0,
+    borderBottomLeftRadius: radii.md,
+    borderBottomRightRadius: radii.md,
+  },
   headerCell: {
-    flex: 1,
     fontWeight: '700',
+    fontSize: typography.small,
     color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   cellName: {
     flex: 2,
+    marginRight: spacing.md,
+  },
+  cellVital: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellStatus: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cellValue: {
-    flex: 1,
+    fontSize: typography.body,
+    fontWeight: '600',
     color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  cellUnit: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.white,
   },
   patientName: {
     fontWeight: '700',
+    fontSize: typography.body,
     color: colors.textPrimary,
+    marginBottom: 2,
   },
   patientMeta: {
+    fontSize: typography.small,
     color: colors.textSecondary,
+  },
+  paginationHint: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  paginationText: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   patientVitals: {
     alignItems: 'flex-end',
