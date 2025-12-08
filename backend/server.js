@@ -7,6 +7,7 @@
 //   MEDITRON_KEY (Bearer token)
 
 import 'dotenv/config';
+import fs from 'fs';
 import express from 'express';
 import fetch from 'node-fetch';
 import pdfParse from 'pdf-parse';
@@ -18,13 +19,32 @@ if (!MEDITRON_URL || !MEDITRON_KEY) {
   console.error('Missing MEDITRON_URL or MEDITRON_KEY');
   process.exit(1);
 }
-if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  console.error('GOOGLE_APPLICATION_CREDENTIALS is required');
+
+// Support either a path to the service account JSON or the raw JSON in env
+const rawCred =
+  process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+  process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+if (!rawCred) {
+  console.error('Missing service account: set GOOGLE_APPLICATION_CREDENTIALS (path) or GOOGLE_APPLICATION_CREDENTIALS_JSON (JSON string)');
+  process.exit(1);
+}
+
+let credentialObj;
+try {
+  if (rawCred.trim().startsWith('{')) {
+    credentialObj = JSON.parse(rawCred);
+  } else {
+    const fileData = fs.readFileSync(rawCred, 'utf-8');
+    credentialObj = JSON.parse(fileData);
+  }
+} catch (err) {
+  console.error('Failed to load service account credentials', err);
   process.exit(1);
 }
 
 admin.initializeApp({
-  credential: admin.credential.cert(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+  credential: admin.credential.cert(credentialObj),
 });
 const db = admin.firestore();
 
