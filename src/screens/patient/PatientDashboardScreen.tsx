@@ -195,11 +195,11 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   const usingSampleVitals = !latestVitals;
   const baselineVitals = {
-    hr: 78,
-    spo2: 98,
-    bp_sys: 110,
-    bp_dia: 72,
-    hrv: 70,
+    hr: 0,
+    spo2: 0,
+    bp_sys:0,
+    bp_dia: 0,
+    hrv: 0,
     ptt: 0,
     ecg: 0,
     maternal_health_score: 100,
@@ -225,7 +225,23 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     arrhythmia_alert: latestVitals?.arrhythmia_alert ?? false,
     anemia_alert: latestVitals?.anemia_alert ?? false,
     preeclampsia_alert: latestVitals?.preeclampsia_alert ?? false,
+    // Edge AI confidence scores
+    rhythm_confidence: latestVitals?.rhythm_confidence ?? 0,
+    anemia_confidence: latestVitals?.anemia_confidence ?? 0,
+    preeclampsia_confidence: latestVitals?.preeclampsia_confidence ?? 0,
     timestamp: latestVitals?.timestamp,
+  };
+
+  // Convert risk text to percentage for display
+  const getRiskPercentage = (riskLevel: string, confidence: number) => {
+    if (confidence > 0) return confidence;
+    // Fallback: estimate from risk level text
+    const level = riskLevel?.toLowerCase() || 'low';
+    if (level.includes('critical')) return 85;
+    if (level.includes('high')) return 65;
+    if (level.includes('moderate')) return 45;
+    if (level.includes('low')) return 20;
+    return 0;
   };
 
   // Get IST time-based greeting
@@ -331,6 +347,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             <Text style={styles.cardTitle}>Real-Time Vitals</Text>
             <Text style={styles.cardSubtitle}>Live monitoring from your LifeBand</Text>
           </View>
+          <View style={styles.edgeAiBadge}>
+            <Text style={styles.edgeAiText}>🤖 Edge AI</Text>
+          </View>
         </View>
 
         {/* Primary Vitals Row: HR & SpO2 */}
@@ -392,20 +411,29 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             <Text style={[styles.healthMetricValue, { color: displayVitals.arrhythmia_alert ? colors.muted : colors.healthy }]}>
               {displayVitals.rhythm}
             </Text>
+            <Text style={styles.confidenceText}>
+              {displayVitals.rhythm_confidence > 0 ? `${displayVitals.rhythm_confidence}%` : 'AI Active'}
+            </Text>
           </View>
         </View>
 
-        {/* Risk Assessment Row */}
+        {/* Edge AI Risk Assessment Row */}
         <View style={styles.riskRow}>
           <View style={[styles.riskTile, displayVitals.anemia_alert && styles.riskAlert]}>
-            <Text style={styles.riskLabel}>Anemia</Text>
-            <Text style={[styles.riskValue, displayVitals.anemia_alert && { color: colors.muted }]}>
+            <Text style={styles.riskLabel}>Anemia Risk</Text>
+            <Text style={[styles.healthMetricScore, { color: getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence) >= 70 ? colors.muted : getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence) >= 40 ? colors.attention : colors.healthy }]}>
+              {getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence)}%
+            </Text>
+            <Text style={styles.confidenceText}>
               {displayVitals.anemia_risk}
             </Text>
           </View>
           <View style={[styles.riskTile, displayVitals.preeclampsia_alert && styles.riskAlert]}>
-            <Text style={styles.riskLabel}>Preeclampsia</Text>
-            <Text style={[styles.riskValue, displayVitals.preeclampsia_alert && { color: colors.muted }]}>
+            <Text style={styles.riskLabel}>Preeclampsia Risk</Text>
+            <Text style={[styles.healthMetricScore, { color: getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence) >= 70 ? colors.muted : getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence) >= 40 ? colors.attention : colors.healthy }]}>
+              {getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence)}%
+            </Text>
+            <Text style={styles.confidenceText}>
               {displayVitals.preeclampsia_risk}
             </Text>
           </View>
@@ -552,6 +580,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
+  },
+  edgeAiBadge: {
+    backgroundColor: 'rgba(40, 53, 147, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  edgeAiText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
   },
   cardHeaderContent: {
     flexDirection: 'row',
@@ -748,6 +787,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  confidenceText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   riskRow: {
     flexDirection: 'row',

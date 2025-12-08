@@ -94,6 +94,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   // Subscribe to latest vitals in Firestore to sync UI even if app restarts
+  // BUT: Don't overwrite real-time BLE data when connected!
   useEffect(() => {
     if (!uid) return;
     latestSubRef.current?.();
@@ -103,16 +104,24 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (!sample) {
-        setLatestVitals(null);
+        // Only clear vitals if NOT connected to LifeBand
+        if (connectionStateRef.current !== 'connected') {
+          setLatestVitals(null);
+        }
         return;
       }
 
       const normalizedSample = ensureLastSampleTimestamp(sample);
       
-      // Always update with Firestore data to ensure patient and doctor see same values
-      console.log('[CONTEXT] Firestore vitals update:', normalizedSample.hr, normalizedSample.timestamp);
-      setLatestVitals(normalizedSample);
-      liveSampleRef.current = normalizedSample;
+      // Only use Firestore data when NOT receiving real-time BLE data
+      // This prevents overwriting live vitals with old aggregated data
+      if (connectionStateRef.current !== 'connected') {
+        console.log('[CONTEXT] Firestore vitals update (not connected):', normalizedSample.hr, normalizedSample.timestamp);
+        setLatestVitals(normalizedSample);
+        liveSampleRef.current = normalizedSample;
+      } else {
+        console.log('[CONTEXT] Ignoring Firestore update - using real-time BLE data');
+      }
     });
     return () => latestSubRef.current?.();
   }, [uid]);
@@ -248,14 +257,8 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         liveSampleRef.current = enrichedSample;
         setLatestVitals(enrichedSample);
         
-        // Save the raw latest sample immediately for real-time doctor view
-        if (uid) {
-          saveVitalsSample(uid, enrichedSample).catch((error: any) => {
-            console.warn('[CONTEXT] Latest sample save failed:', error?.message || 'Unknown error');
-          });
-        }
-        
-        // Persist aggregated vitals snapshot in the background
+        // Only save aggregated 30-min averages to Firebase (not every reading)
+        // This reduces Firebase writes and storage costs
         recordAggregatedSample(enrichedSample);
       } catch (error: any) {
         const errorMsg = error?.reason || error?.message || 'Unknown error';
