@@ -18,7 +18,7 @@
   #include <Adafruit_NeoPixel.h>
 
    // === TENSORFLOW LITE EDGE AI ===
-   #include "tflite_inference.h"
+   // Edge AI includes
    #include "lifeband_edge_ai.h"
  
    // Initialize Edge AI engine
@@ -1091,11 +1091,17 @@ void updateFallbackBP() {
       stopStreamingSession("DISCONNECT");
       Serial.println("\n========================================");
       Serial.println("[BLE] DISCONNECTED");
+      Serial.println("[BLE] Auto-reset in 3 seconds...");
       Serial.println("========================================\n");
+      
+      // Show red light for 3 seconds before reset
       rgbColor(255, 0, 0);
-      delay(100);
-      NimBLEDevice::startAdvertising();
-      Serial.println("[BLE] Advertising restarted");
+      delay(3000);
+      
+      // Reset ESP32
+      Serial.println("[SYSTEM] Resetting ESP32...");
+      Serial.flush();  // Ensure all serial data is sent
+      ESP.restart();   // Restart the microcontroller
     }
   };
 

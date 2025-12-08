@@ -904,15 +904,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingRight: spacing.xs,
     paddingVertical: spacing.xs,
-    gap: spacing.xs,
+    gap: 1,
   },
   navActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: radii.md,
     backgroundColor: colors.card,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    paddingHorizontal: 2,
   },
   navAction: {
     paddingHorizontal: spacing.xs,
@@ -929,7 +929,7 @@ const styles = StyleSheet.create({
   navSignOutAction: {
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
-    marginLeft: spacing.xs,
+    marginLeft: 0.5,
   },
   navLabel: {
     color: colors.white,
