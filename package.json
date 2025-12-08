@@ -42,6 +42,7 @@
     "react-native-screens": "~4.16.0",
     "react-native-svg": "^15.15.1",
     "react-native-url-polyfill": "^3.0.0",
+    "tesseract.js": "^6.0.1",
     "three": "^0.166.1",
     "three-stdlib": "^2.36.1",
     "victory-native": "^37.3.6"
@@ -51,6 +52,12 @@
     "@types/three": "^0.181.0",
     "eas-cli": "^0.0.0",
     "typescript": "~5.9.2"
+  },
+  "optionalDependencies": {
+    "@tesseract.js/node": "5.1.0",
+    "firebase-admin": "^12.7.0",
+    "node-fetch": "^2.7.0",
+    "pdf-parse": "^1.1.4"
   },
   "private": true
 }

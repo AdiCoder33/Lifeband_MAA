@@ -6,10 +6,13 @@ import { SUPABASE_ANON_KEY, SUPABASE_PROJECT_URL, supabase } from './supabaseCli
 import { firestore } from './firebase';
 import { ReportMeta } from '../types/appointment';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
 export type ReportUploadResult = {
   fileUrl: string;
   fileName: string;
   contentType: string;
+  reportId?: string;
 };
 
 /**
@@ -62,7 +65,7 @@ export async function uploadReportFileSupabase(
     const fileUrl = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/reports/${path}`;
 
     // Save metadata to Firestore
-    await addDoc(collection(firestore, 'appointments', appointmentId, 'reports'), {
+    const docRef = await addDoc(collection(firestore, 'appointments', appointmentId, 'reports'), {
       doctorId,
       patientId,
       appointmentId,
@@ -72,7 +75,25 @@ export async function uploadReportFileSupabase(
       uploadedAt: serverTimestamp(),
     });
 
-    return { fileUrl, fileName: rawName, contentType: inferredType };
+    // Optionally call backend to OCR + summarize automatically
+    if (BACKEND_URL) {
+      try {
+        await fetch(`${BACKEND_URL}/process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appointmentId,
+            reportId: docRef.id,
+            fileUrl,
+            mimeType: inferredType,
+          }),
+        });
+      } catch (err) {
+        console.warn('Backend OCR call failed (continuing)', err);
+      }
+    }
+
+    return { fileUrl, fileName: rawName, contentType: inferredType, reportId: docRef.id };
   } catch (e: any) {
     console.error('Report upload failed', e);
     throw e;
