@@ -45,6 +45,7 @@ try {
 
 admin.initializeApp({
   credential: admin.credential.cert(credentialObj),
+  projectId: credentialObj.project_id,
 });
 const db = admin.firestore();
 

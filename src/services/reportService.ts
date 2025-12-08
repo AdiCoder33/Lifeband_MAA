@@ -118,6 +118,8 @@ export const subscribeAppointmentReports = (
         fileUrl: data.fileUrl,
         mimeType: data.contentType,
         uploadedAt: data.uploadedAt,
+        extractedText: data.extractedText,
+        analysis: data.analysis,
       };
     });
     callback(items);
