@@ -9,8 +9,12 @@ import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { UserProfile } from '../../types/user';
 import { createAppointment } from '../../services/appointmentService';
 import { format } from 'date-fns';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DoctorStackParamList } from '../../types/navigation';
 
-const DoctorCreateAppointmentScreen: React.FC = () => {
+type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorCreateAppointment'>;
+
+const DoctorCreateAppointmentScreen: React.FC<Props> = ({ navigation }) => {
   const uid = auth.currentUser?.uid;
   const [patients, setPatients] = useState<UserProfile[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<UserProfile | null>(null);
@@ -42,10 +46,17 @@ const DoctorCreateAppointmentScreen: React.FC = () => {
     try {
       setLoading(true);
       await createAppointment(uid, selectedPatient.uid, dateValue, reason || undefined);
-      Alert.alert('Created', 'Appointment created.');
-      setReason('');
-      setDateValue(new Date());
-      setSelectedPatient(null);
+      Alert.alert('Success', 'Appointment created successfully', [
+        {
+          text: 'OK',
+          onPress: () => {
+            setReason('');
+            setDateValue(new Date());
+            setSelectedPatient(null);
+            navigation.navigate('DoctorAppointments');
+          }
+        }
+      ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Could not create appointment.');
     } finally {

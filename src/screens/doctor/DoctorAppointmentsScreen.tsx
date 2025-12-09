@@ -29,9 +29,9 @@ const DoctorAppointmentsScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScreenContainer>
-      <View style={styles.headerRow}>
+      <View style={styles.header}>
         <Text style={styles.title}>Appointments</Text>
-        <Button title="Create" onPress={() => navigation.navigate('DoctorCreateAppointment')} />
+        <Text style={styles.subtitle}>Manage your consultation schedule</Text>
       </View>
       <View style={styles.tabs}>
         {tabs.map((t) => (
@@ -46,11 +46,31 @@ const DoctorAppointmentsScreen: React.FC<Props> = ({ navigation }) => {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => {
           const date = new Date((item.scheduledAt as any).toDate ? (item.scheduledAt as any).toDate() : item.scheduledAt);
+          const statusColors = {
+            upcoming: { bg: 'rgba(77, 182, 172, 0.1)', border: colors.accent, text: colors.accent },
+            completed: { bg: 'rgba(67, 160, 71, 0.1)', border: colors.healthy, text: colors.healthy },
+            cancelled: { bg: 'rgba(211, 47, 47, 0.1)', border: colors.critical, text: colors.critical },
+          };
+          const statusColor = statusColors[item.status];
+          
           return (
-            <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('DoctorAppointmentDetail', { appointmentId: item.id! })}>
-              <Text style={styles.cardTitle}>{format(date, 'MMM d, HH:mm')}</Text>
-              <Text style={styles.cardCopy}>{item.reason || 'Consultation'}</Text>
-              <Text style={styles.status}>{item.status}</Text>
+            <TouchableOpacity 
+              style={[styles.card, { backgroundColor: statusColor.bg, borderLeftColor: statusColor.border }]} 
+              onPress={() => navigation.navigate('DoctorAppointmentDetail', { appointmentId: item.id! })}
+            >
+              <View style={styles.cardHeader}>
+                <View style={styles.dateBadge}>
+                  <Text style={styles.dateMonth}>{format(date, 'MMM')}</Text>
+                  <Text style={styles.dateDay}>{format(date, 'd')}</Text>
+                </View>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardTitle}>{format(date, 'EEEE, HH:mm')}</Text>
+                  <Text style={styles.cardCopy}>{item.reason || 'Consultation'}</Text>
+                </View>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor.border }]}>
+                <Text style={styles.statusText}>{item.status}</Text>
+              </View>
             </TouchableOpacity>
           );
         }}
@@ -61,33 +81,45 @@ const DoctorAppointmentsScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  headerRow: {
+  header: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
-    marginBottom: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.heading,
+    fontSize: typography.heading + 2,
     fontWeight: '800',
     color: colors.secondary,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
   },
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
   },
   tab: {
-    paddingVertical: spacing.sm,
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    marginRight: spacing.sm,
-    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 2,
+    borderColor: '#E9ECEF',
+    alignItems: 'center',
   },
   tabActive: {
     backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
+    shadowColor: colors.secondary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabText: {
     color: colors.textPrimary,
@@ -100,24 +132,67 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   card: {
-    backgroundColor: colors.card,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  dateBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.md,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  dateMonth: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.white,
+    textTransform: 'uppercase',
+  },
+  dateDay: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.white,
+    lineHeight: 20,
+  },
+  cardContent: {
+    flex: 1,
   },
   cardTitle: {
     fontWeight: '700',
     color: colors.textPrimary,
+    fontSize: typography.body,
+    marginBottom: 2,
   },
   cardCopy: {
     color: colors.textSecondary,
-    marginTop: spacing.xs,
+    fontSize: typography.small,
   },
-  status: {
-    marginTop: spacing.xs,
-    color: colors.secondary,
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs - 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+  },
+  statusText: {
+    color: colors.white,
     fontWeight: '700',
+    fontSize: typography.small - 1,
+    textTransform: 'capitalize',
   },
   empty: {
     textAlign: 'center',
