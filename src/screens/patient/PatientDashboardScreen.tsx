@@ -195,11 +195,11 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   const usingSampleVitals = !latestVitals;
   const baselineVitals = {
-    hr: 78,
-    spo2: 98,
-    bp_sys: 110,
-    bp_dia: 72,
-    hrv: 70,
+    hr: 0,
+    spo2: 0,
+    bp_sys:0,
+    bp_dia: 0,
+    hrv: 0,
     ptt: 0,
     ecg: 0,
     maternal_health_score: 100,
@@ -225,7 +225,23 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     arrhythmia_alert: latestVitals?.arrhythmia_alert ?? false,
     anemia_alert: latestVitals?.anemia_alert ?? false,
     preeclampsia_alert: latestVitals?.preeclampsia_alert ?? false,
+    // Edge AI confidence scores
+    rhythm_confidence: latestVitals?.rhythm_confidence ?? 0,
+    anemia_confidence: latestVitals?.anemia_confidence ?? 0,
+    preeclampsia_confidence: latestVitals?.preeclampsia_confidence ?? 0,
     timestamp: latestVitals?.timestamp,
+  };
+
+  // Convert risk text to percentage for display
+  const getRiskPercentage = (riskLevel: string, confidence: number) => {
+    if (confidence > 0) return confidence;
+    // Fallback: estimate from risk level text
+    const level = riskLevel?.toLowerCase() || 'low';
+    if (level.includes('critical')) return 85;
+    if (level.includes('high')) return 65;
+    if (level.includes('moderate')) return 45;
+    if (level.includes('low')) return 20;
+    return 0;
   };
 
   // Get IST time-based greeting
@@ -331,6 +347,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             <Text style={styles.cardTitle}>Real-Time Vitals</Text>
             <Text style={styles.cardSubtitle}>Live monitoring from your LifeBand</Text>
           </View>
+          <View style={styles.edgeAiBadge}>
+            <Text style={styles.edgeAiText}>🤖 Edge AI</Text>
+          </View>
         </View>
 
         {/* Primary Vitals Row: HR & SpO2 */}
@@ -392,20 +411,29 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             <Text style={[styles.healthMetricValue, { color: displayVitals.arrhythmia_alert ? colors.muted : colors.healthy }]}>
               {displayVitals.rhythm}
             </Text>
+            <Text style={styles.confidenceText}>
+              {displayVitals.rhythm_confidence > 0 ? `${displayVitals.rhythm_confidence}%` : 'AI Active'}
+            </Text>
           </View>
         </View>
 
-        {/* Risk Assessment Row */}
+        {/* Edge AI Risk Assessment Row */}
         <View style={styles.riskRow}>
           <View style={[styles.riskTile, displayVitals.anemia_alert && styles.riskAlert]}>
-            <Text style={styles.riskLabel}>Anemia</Text>
-            <Text style={[styles.riskValue, displayVitals.anemia_alert && { color: colors.muted }]}>
+            <Text style={styles.riskLabel}>Anemia Risk</Text>
+            <Text style={[styles.healthMetricScore, { color: getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence) >= 70 ? colors.muted : getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence) >= 40 ? colors.attention : colors.healthy }]}>
+              {getRiskPercentage(displayVitals.anemia_risk, displayVitals.anemia_confidence)}%
+            </Text>
+            <Text style={styles.confidenceText}>
               {displayVitals.anemia_risk}
             </Text>
           </View>
           <View style={[styles.riskTile, displayVitals.preeclampsia_alert && styles.riskAlert]}>
-            <Text style={styles.riskLabel}>Preeclampsia</Text>
-            <Text style={[styles.riskValue, displayVitals.preeclampsia_alert && { color: colors.muted }]}>
+            <Text style={styles.riskLabel}>Preeclampsia Risk</Text>
+            <Text style={[styles.healthMetricScore, { color: getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence) >= 70 ? colors.muted : getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence) >= 40 ? colors.attention : colors.healthy }]}>
+              {getRiskPercentage(displayVitals.preeclampsia_risk, displayVitals.preeclampsia_confidence)}%
+            </Text>
+            <Text style={styles.confidenceText}>
               {displayVitals.preeclampsia_risk}
             </Text>
           </View>
@@ -428,23 +456,24 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         />
       </View>
 
-      <TouchableOpacity
-        style={[styles.card, styles.cardLavender]}
-        activeOpacity={0.9}
-        onPress={() => navigation.navigate('AppointmentsCalendar')}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Appointments</Text>
-          <Text style={styles.cardEmoji}>PJ</Text>
+      <View style={[styles.card, styles.cardLavender]}>
+        <View style={styles.appointmentCardHeader}>
+          <View style={styles.appointmentIconWrapper}>
+            <Text style={styles.appointmentCardIcon}>📋</Text>
+          </View>
+          <View style={styles.appointmentHeaderText}>
+            <Text style={styles.cardTitle}>Appointment Checklist</Text>
+            <Text style={styles.cardSubtitle}>Track your visits and care schedule</Text>
+          </View>
         </View>
-        <Text style={styles.cardCopy}>Open your calendar to review upcoming visits and plan ahead.</Text>
+        <Text style={styles.cardCopy}>Review your upcoming, completed, and cancelled appointments. Stay organized with your prenatal care journey.</Text>
         <Button
-          title="View Checklist"
-          variant="outline"
+          title="📋 View Checklist"
+          variant="primary"
           onPress={() => navigation.navigate('PatientAppointments')}
           style={styles.buttonSpace}
         />
-      </TouchableOpacity>
+      </View>
 
       <View style={styles.bottomSpacer} />
     </ScreenContainer>
@@ -552,6 +581,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
+  },
+  edgeAiBadge: {
+    backgroundColor: 'rgba(40, 53, 147, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  edgeAiText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
   },
   cardHeaderContent: {
     flexDirection: 'row',
@@ -749,6 +789,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
+  confidenceText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   riskRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -859,15 +905,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingRight: spacing.xs,
     paddingVertical: spacing.xs,
-    gap: spacing.xs,
+    gap: 1,
   },
   navActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: radii.md,
     backgroundColor: colors.card,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    paddingHorizontal: 2,
   },
   navAction: {
     paddingHorizontal: spacing.xs,
@@ -884,7 +930,7 @@ const styles = StyleSheet.create({
   navSignOutAction: {
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
-    marginLeft: spacing.xs,
+    marginLeft: 0.5,
   },
   navLabel: {
     color: colors.white,
@@ -911,6 +957,26 @@ const styles = StyleSheet.create({
     height: 24,
     transform: [{ scale: 2.2 }],  // adjust zoom as needed
     marginRight: spacing.sm,
+  },
+  appointmentCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  appointmentIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  appointmentCardIcon: {
+    fontSize: 28,
+  },
+  appointmentHeaderText: {
+    flex: 1,
   },
 });
 

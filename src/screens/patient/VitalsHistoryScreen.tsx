@@ -360,7 +360,7 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
         bucket.hrSum += sample.hr;
         bucket.hrCount += 1;
       }
-      if (typeof sample.spo2 === 'number' && !Number.isNaN(sample.spo2) && sample.spo2 > 0) {
+      if (typeof sample.spo2 === 'number' && !Number.isNaN(sample.spo2) && sample.spo2 >= 0) {
         bucket.spo2Sum += sample.spo2;
         bucket.spo2Count += 1;
       }
@@ -392,10 +392,12 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
     [dailyAverages],
   );
 
-  const spo2Trend = useMemo(
-    () => dailyAverages.filter((d) => typeof d.spo2Avg === 'number').map((d) => ({ x: d.date, y: d.spo2Avg! })),
-    [dailyAverages],
-  );
+  const spo2Trend = useMemo(() => {
+    const trend = dailyAverages
+      .filter((d) => typeof d.spo2Avg === 'number' && !isNaN(d.spo2Avg!) && d.spo2Avg! > 0)
+      .map((d) => ({ x: d.date, y: d.spo2Avg! }));
+    return trend;
+  }, [dailyAverages]);
 
   const bpTrends = useMemo(() => ({
     sys: dailyAverages.filter((d) => typeof d.bpSysAvg === 'number').map((d) => ({ x: d.date, y: d.bpSysAvg! })),
@@ -420,11 +422,12 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
     const values = spo2Trend.map(d => d.y);
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const padding = (max - min) * 0.1 || 2;
-    return { 
-      min: Math.max(85, Math.floor(min - padding)), 
+    const padding = Math.max((max - min) * 0.1, 2);
+    const domain = { 
+      min: Math.max(70, Math.floor(min - padding)), 
       max: Math.min(100, Math.ceil(max + padding)) 
     };
+    return domain;
   }, [spo2Trend]);
 
   const bpDomain = useMemo(() => {
@@ -554,41 +557,58 @@ const VitalsHistoryScreen: React.FC<{ showGraphs?: boolean }> = ({ showGraphs = 
         </View>
         
         <View style={styles.chartBlock}>
-          <Text style={styles.chartBlockTitle}>Oxygen Saturation (%)</Text>
-          {spo2Trend.length >= 2 ? (
+          <Text style={styles.chartBlockTitle}>Oxygen Saturation (SpO₂%)</Text>
+          {spo2Trend.length >= 1 ? (
             <VictoryChart
               scale={{ x: 'time' }}
               width={320}
               height={140}
-              padding={{ top: 12, bottom: 32, left: 38, right: 12 }}
-              domainPadding={{ x: 15, y: 0 }}
+              padding={{ top: 20, bottom: 40, left: 45, right: 15 }}
+              domainPadding={{ x: 20, y: 5 }}
               domain={{ y: [spo2Domain.min, spo2Domain.max] }}
             >
               <VictoryAxis
                 style={{
                   axis: { stroke: colors.border },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
                   grid: { stroke: 'transparent' },
                 }}
-                tickFormat={(tick: any) => format(new Date(tick), 'MMM d')}
+                tickFormat={(tick: any) => {
+                  try {
+                    return format(new Date(tick), 'MMM d');
+                  } catch {
+                    return '';
+                  }
+                }}
               />
               <VictoryAxis
                 dependentAxis
                 style={{
                   axis: { stroke: colors.border },
-                  tickLabels: { fill: colors.textSecondary, fontSize: 9 },
+                  tickLabels: { fill: colors.textSecondary, fontSize: 10 },
                   grid: { stroke: 'rgba(77, 182, 172, 0.08)', strokeDasharray: '3,3' },
                 }}
+                tickFormat={(t) => `${Math.round(t)}%`}
               />
-              <VictoryLine
-                interpolation="monotoneX"
-                data={spo2Trend}
-                style={{ data: { stroke: '#26A69A', strokeWidth: 2.5 } }}
+              {spo2Trend.length > 1 && (
+                <VictoryLine
+                  interpolation="natural"
+                  data={spo2Trend}
+                  style={{ data: { stroke: '#26A69A', strokeWidth: 3 } }}
+                />
+              )}
+              <VictoryScatter 
+                data={spo2Trend} 
+                size={6} 
+                style={{ data: { fill: '#26A69A', stroke: '#fff', strokeWidth: 2 } }} 
               />
-              <VictoryScatter data={spo2Trend} size={3.5} style={{ data: { fill: '#26A69A' } }} />
             </VictoryChart>
           ) : (
-            <Text style={styles.chartEmpty}>SpO₂ readings will appear here</Text>
+            <View style={styles.chartEmptyContainer}>
+              <Text style={styles.chartEmptyIcon}>💨</Text>
+              <Text style={styles.chartEmpty}>No SpO₂ readings yet</Text>
+              <Text style={styles.chartEmptyHint}>Connect your LifeBand to start tracking oxygen levels</Text>
+            </View>
           )}
         </View>
         
@@ -1013,6 +1033,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     padding: spacing.xl,
     fontSize: typography.body,
+  },
+  chartEmptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+  },
+  chartEmptyIcon: {
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  chartEmptyHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
+  },
+  chartDebug: {
+    fontSize: 11,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+    fontWeight: '600',
   },
 });
 

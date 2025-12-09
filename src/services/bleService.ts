@@ -31,6 +31,41 @@ let isCleaningUp = false; // Flag to prevent multiple simultaneous cleanups
 let isConnecting = false; // Flag to prevent simultaneous connection attempts
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const safeManagerCancelConnection = async (deviceId?: string, context: string = 'generic'): Promise<boolean> => {
+  if (!manager) {
+    console.log(`[BLE] Manager unavailable, skip cancel (${context})`);
+    return false;
+  }
+  if (!deviceId) {
+    console.warn(`[BLE] Missing deviceId for manager cancel (${context})`);
+    return false;
+  }
+
+  let stillConnected = false;
+  try {
+    stillConnected = await manager.isDeviceConnected(deviceId);
+  } catch (statusError: any) {
+    const errorMsg = statusError?.reason || statusError?.message || 'isDeviceConnected failed';
+    console.log(`[BLE] Manager connection check failed (${context}):`, errorMsg);
+    return false;
+  }
+
+  if (!stillConnected) {
+    console.log(`[BLE] Manager reports device already disconnected (${context})`);
+    return false;
+  }
+
+  try {
+    await manager.cancelDeviceConnection(deviceId);
+    console.log(`[BLE] Device disconnected via manager (${context})`);
+    return true;
+  } catch (error: any) {
+    const errorMsg = error?.reason || error?.message || 'Manager disconnect error';
+    console.warn(`[BLE] Manager cancelDeviceConnection error (${context}):`, errorMsg);
+    return false;
+  }
+};
+
 export const initBleManager = () => {
   if (!manager) {
     manager = new BleManager();
@@ -163,6 +198,13 @@ const parseVitalsPayload = (value?: string | null): VitalsSample | null => {
       buffered: json.buffered === true,
     };
     
+    // Log AI confidence values for debugging
+    console.log('[PARSE] AI Confidence:', {
+      rhythm: sample.rhythm_confidence,
+      anemia: sample.anemia_confidence,
+      preeclampsia: sample.preeclampsia_confidence
+    });
+    
     // Log critical alerts
     if (sample.arrhythmia_alert || sample.anemia_alert || sample.preeclampsia_alert) {
       console.warn('[PARSE] 🚨 CRITICAL ALERT DETECTED!');
@@ -288,14 +330,7 @@ export const disconnectLifeBand = async (): Promise<void> => {
     }
 
     // Always try manager disconnect as backup to ensure cleanup
-    if (manager) {
-      try {
-        await manager.cancelDeviceConnection(deviceToDisconnect.id);
-        console.log('[BLE] Device disconnected via manager');
-      } catch (error) {
-        console.log('[BLE] Manager disconnect completed');
-      }
-    }
+    await safeManagerCancelConnection(deviceToDisconnect.id, 'disconnectLifeBand');
   } else {
     console.log('[BLE] Skipping manual cancel - disconnect already handled');
   }
@@ -359,15 +394,10 @@ export const scanAndConnectToLifeBand = async (
     onStateChange({ connectionState: 'connecting', device: { id: strongestDevice.id, name: strongestDevice.name } });
 
     // Clean up any existing connections first
-    if (currentDevice && manager) {
+    if (currentDevice) {
       const oldDeviceId = currentDevice.id;
       currentDevice = null; // Clear reference first
-      try {
-        await manager.cancelDeviceConnection(oldDeviceId);
-        console.log('[BLE] Cleaned up previous connection');
-      } catch (e) {
-        console.log('[BLE] Previous connection cleanup completed');
-      }
+      await safeManagerCancelConnection(oldDeviceId, 'scan connect cleanup');
     }
     
     const connected = await strongestDevice.connect({ 
@@ -502,12 +532,8 @@ export const scanAndConnectToLifeBand = async (
     
     cleanupNotification();
     
-    if (deviceToCleanup && manager) {
-      try {
-        await manager.cancelDeviceConnection(deviceToCleanup.id);
-      } catch {
-        // Ignore cleanup errors
-      }
+    if (deviceToCleanup) {
+      await safeManagerCancelConnection(deviceToCleanup.id, 'scan connect error cleanup');
     }
     
     onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
@@ -557,15 +583,10 @@ export const reconnectLifeBandById = async (
     console.log('[BLE] Reconnecting to device ID:', deviceId);
     
     // Clean up any existing connections first
-    if (currentDevice && manager) {
+    if (currentDevice) {
       const oldDeviceId = currentDevice.id;
       currentDevice = null; // Clear reference first
-      try {
-        await manager.cancelDeviceConnection(oldDeviceId);
-        console.log('[BLE] Cleaned up previous connection');
-      } catch (e) {
-        console.log('[BLE] Previous connection cleanup completed');
-      }
+      await safeManagerCancelConnection(oldDeviceId, 'reconnect cleanup');
     }
     
     const device = await manager.connectToDevice(deviceId, { 
@@ -701,12 +722,8 @@ export const reconnectLifeBandById = async (
     
     cleanupNotification();
     
-    if (deviceToCleanup && manager) {
-      try {
-        await manager.cancelDeviceConnection(deviceToCleanup.id);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
+    if (deviceToCleanup) {
+      await safeManagerCancelConnection(deviceToCleanup.id, 'reconnect error cleanup');
     }
     
     onStateChange({ connectionState: 'disconnected', lastError: errorMsg });
