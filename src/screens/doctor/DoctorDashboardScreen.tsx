@@ -381,33 +381,69 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
       <View style={styles.cardRow}>
         <TouchableOpacity style={[styles.statCard, styles.card]} onPress={() => navigation.navigate('DoctorPatients')}>
+          <View style={styles.statIconCircle}>
+            <Text style={styles.statIcon}>👥</Text>
+          </View>
           <Text style={styles.cardLabel}>Patients</Text>
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
-        <View style={[styles.statCardAlt, styles.card]}>
-          <Text style={styles.cardLabel}>Upcoming Appointments</Text>
+        <TouchableOpacity style={[styles.statCardAlt, styles.card]} onPress={() => navigation.navigate('DoctorAppointments')}>
+          <View style={[styles.statIconCircle, styles.statIconCircleAlt]}>
+            <Text style={styles.statIcon}>📅</Text>
+          </View>
+          <Text style={styles.cardLabel}>Upcoming</Text>
           <Text style={styles.cardValue}>{upcoming.length}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.cardFull, styles.cardAppointments]}>
-        <Text style={styles.cardTitle}>Next Appointments</Text>
+        <View style={styles.appointmentHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Next Appointments</Text>
+            <Text style={styles.cardSubtitle}>Your upcoming consultations</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.createAppointmentButton}
+            onPress={() => navigation.navigate('DoctorCreateAppointment')}
+          >
+            <Text style={styles.createAppointmentIcon}>➕</Text>
+          </TouchableOpacity>
+        </View>
         {nextAppointments.length === 0 ? (
-          <Text style={styles.cardCopy}>No upcoming appointments.</Text>
+          <View style={styles.emptyAppointment}>
+            <Text style={styles.emptyAppointmentIcon}>📅</Text>
+            <Text style={styles.emptyAppointmentText}>No upcoming appointments</Text>
+            <Text style={styles.emptyAppointmentHint}>Create new appointments to manage your schedule</Text>
+          </View>
         ) : (
-          nextAppointments.map((a) => (
-            <View key={a.id} style={styles.apptRow}>
-              <Text style={styles.apptTime}>
-                {format(
-                  new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt),
-                  'MMM d, HH:mm',
-                )}
-              </Text>
-              <Text style={styles.apptReason}>{a.reason || 'Consultation'}</Text>
-            </View>
-          ))
+          <>
+            {nextAppointments.map((a, index) => {
+              const appointmentDate = new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt);
+              return (
+                <View key={a.id} style={[styles.appointmentCard, index === nextAppointments.length - 1 && styles.appointmentCardLast]}>
+                  <View style={styles.appointmentDateBadge}>
+                    <Text style={styles.appointmentMonth}>{format(appointmentDate, 'MMM')}</Text>
+                    <Text style={styles.appointmentDay}>{format(appointmentDate, 'd')}</Text>
+                  </View>
+                  <View style={styles.appointmentDetails}>
+                    <Text style={styles.appointmentPatient}>{a.patientId}</Text>
+                    <Text style={styles.appointmentReason}>{a.reason || 'Consultation'}</Text>
+                    <Text style={styles.appointmentTime}>🕐 {format(appointmentDate, 'HH:mm')}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.appointmentAction}>
+                    <Text style={styles.appointmentActionIcon}>→</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </>
         )}
-        <Button title="View All Appointments" variant="outline" onPress={() => navigation.navigate('DoctorAppointments')} />
+        <Button 
+          title="View All Appointments" 
+          variant="primary" 
+          onPress={() => navigation.navigate('DoctorAppointments')}
+          style={styles.viewAllButton}
+        />
       </View>
 
       <View style={[styles.cardFull, styles.cardPatientsVitals]}>
@@ -603,11 +639,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.secondary,
     padding: spacing.lg,
     borderRadius: radii.lg,
     marginHorizontal: spacing.md,
     marginBottom: spacing.md,
+    shadowColor: colors.secondary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   heroTextBlock: {
     flex: 1,
@@ -688,29 +729,36 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.8 }],
   },
   alertCard: {
-    backgroundColor: '#FFF4F3',
-    borderWidth: 1,
-    borderColor: 'rgba(211, 47, 47, 0.12)',
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: 'rgba(211, 47, 47, 0.2)',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.critical,
   },
   alertHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   alertBadge: {
-    minWidth: 28,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-    backgroundColor: colors.primary,
+    minWidth: 32,
+    height: 32,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.lg,
+    backgroundColor: colors.critical,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.critical,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   alertBadgeText: {
     color: colors.white,
-    fontWeight: '700',
-    fontSize: typography.small,
+    fontWeight: '800',
+    fontSize: typography.body,
   },
   alertRow: {
     flexDirection: 'row',
@@ -751,9 +799,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   contactCard: {
-    backgroundColor: '#EEF0FF',
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: 'rgba(77, 182, 172, 0.2)',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
   },
   contactRow: {
     flexDirection: 'row',
@@ -780,21 +830,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   contactButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.secondary,
+    borderWidth: 2,
+    borderColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   contactButtonAccent: {
-    borderColor: colors.primary,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   contactButtonIcon: {
-    fontSize: 16,
+    fontSize: 18,
   },
   rowLast: {
     borderBottomWidth: 0,
@@ -823,17 +879,37 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: '#FDECEE',
+    alignItems: 'center',
   },
   statCardAlt: {
     backgroundColor: '#EFE9FF',
+    alignItems: 'center',
+  },
+  statIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(229, 115, 115, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  statIconCircleAlt: {
+    backgroundColor: 'rgba(40, 53, 147, 0.15)',
+  },
+  statIcon: {
+    fontSize: 24,
   },
   cardLabel: {
     color: colors.textSecondary,
+    fontSize: typography.small,
+    fontWeight: '600',
   },
   cardValue: {
-    fontSize: typography.heading,
+    fontSize: typography.heading + 8,
     fontWeight: '800',
     color: colors.textPrimary,
+    marginTop: spacing.xs,
   },
   cardFull: {
     backgroundColor: colors.card,
@@ -853,15 +929,137 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     color: colors.textPrimary,
   },
+  cardSubtitle: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   cardCopy: {
     color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
   cardAppointments: {
-    backgroundColor: '#E8F7F4',
+    backgroundColor: colors.white,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  createAppointmentButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createAppointmentIcon: {
+    fontSize: 18,
+    color: colors.white,
+  },
+  emptyAppointment: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  emptyAppointmentIcon: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  emptyAppointmentText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  emptyAppointmentHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  appointmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FFFE',
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 182, 172, 0.2)',
+  },
+  appointmentCardLast: {
+    marginBottom: spacing.md,
+  },
+  appointmentDateBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.md,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  appointmentMonth: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.white,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  appointmentDay: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.white,
+    lineHeight: 22,
+  },
+  appointmentDetails: {
+    flex: 1,
+  },
+  appointmentPatient: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  appointmentReason: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  appointmentTime: {
+    fontSize: typography.small,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  appointmentAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(77, 182, 172, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appointmentActionIcon: {
+    fontSize: 16,
+    color: colors.accent,
+    fontWeight: 'bold',
+  },
+  viewAllButton: {
+    marginTop: spacing.xs,
   },
   cardPatientsVitals: {
-    backgroundColor: '#FFF9E6',
+    backgroundColor: colors.white,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
   },
   emptyState: {
     alignItems: 'center',
@@ -913,22 +1111,22 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.sm,
     borderBottomWidth: 2,
-    borderBottomColor: '#FFC107',
-    backgroundColor: '#FFFBF0',
+    borderBottomColor: colors.primary,
+    backgroundColor: 'rgba(229, 115, 115, 0.08)',
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 193, 7, 0.2)',
-    // backgroundColor will be set dynamically based on patient status
+    borderBottomColor: 'rgba(229, 115, 115, 0.1)',
+    backgroundColor: colors.white,
   },
   tableRowLast: {
     borderBottomWidth: 0,
@@ -937,7 +1135,7 @@ const styles = StyleSheet.create({
   },
   headerCell: {
     fontWeight: '700',
-    fontSize: typography.small,
+    fontSize: typography.small - 1,
     color: colors.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
