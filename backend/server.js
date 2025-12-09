@@ -80,12 +80,14 @@ async function ocrBuffer(buf, mime = '') {
 
 async function summarizeWithMeditron(text) {
   const prompt = `
-You are Meditron, a careful obstetric assistant. Summarize key findings from this medical report in 5 short bullet points for a non-medical person.
-Be conservative, avoid treatment advice, and end with:
-"This is general information only. A pregnant woman must follow her doctor’s advice."
+You are Meditron. Summarize the report into exactly 3 short bullet points.
+- Use ONLY the provided text. Do not invent.
+- Ignore phone numbers, emails, addresses.
+- If no clinical findings, say: "No clinical findings detected."
+- End with: "This is general information only. A pregnant woman must follow her doctor’s advice."
 
 Report text:
-${text.slice(0, 6000)}
+${text.slice(0, 4000)}
   `.trim();
 
   const resp = await fetch(`${MEDITRON_URL}/v1/completions`, {
@@ -97,8 +99,8 @@ ${text.slice(0, 6000)}
     body: JSON.stringify({
       model: 'meditron-7b',
       prompt,
-      max_tokens: 320,
-      temperature: 0.2,
+      max_tokens: 220,
+      temperature: 0.1,
       stop: ['Question:'],
     }),
   });
@@ -116,13 +118,44 @@ app.post('/process', async (req, res) => {
 
     const buf = await downloadBuffer(fileUrl);
     const extractedText = await ocrBuffer(buf, mimeType);
-    const summary = await summarizeWithMeditron(extractedText);
+
+    // Guard: if OCR failed or too little text, skip Meditron and store a friendly message
+    const normalizedText = (extractedText || '').trim().replace(/\s+/g, ' ');
+    if (normalizedText.length < 30) {
+      await db.doc(`appointments/${appointmentId}/reports/${reportId}`).set(
+        {
+          extractedText,
+          analysis: {
+            summary: 'No readable text detected in this report. Please upload a clearer image or PDF.',
+            model: 'meditron-7b',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+        },
+        { merge: true },
+      );
+      return res.json({ ok: true, summary: 'No readable text detected in this report. Please upload a clearer image or PDF.' });
+    }
+
+    const cleaned = normalizedText
+      .replace(/tel:?\s*\+?[0-9\- ]+/gi, '')
+      .replace(/\S+@\S+/g, '')
+      .replace(/\b\d{3,}\b/g, '')
+      .trim();
+
+    const summary = await summarizeWithMeditron(cleaned || normalizedText);
+
+    // Guard: if the model returns mostly punctuation/too short, fall back
+    const lettersOnly = (summary || '').replace(/[^a-zA-Z]/g, '');
+    const finalSummary =
+      !lettersOnly || lettersOnly.length < 20
+        ? 'The report text could not be summarized reliably. Please upload a clearer image or PDF.'
+        : summary;
 
     await db.doc(`appointments/${appointmentId}/reports/${reportId}`).set(
       {
         extractedText,
         analysis: {
-          summary,
+          summary: finalSummary,
           model: 'meditron-7b',
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },

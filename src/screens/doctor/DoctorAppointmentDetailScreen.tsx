@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, Linking } from 'react-native';
+﻿import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -14,6 +14,8 @@ import { calculatePregnancyProgress } from '../../utils/pregnancy';
 import { UserProfile } from '../../types/user';
 import { format } from 'date-fns';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
 type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorAppointmentDetail'>;
 
 const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -25,6 +27,7 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const [reports, setReports] = useState<ReportMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [processingReportId, setProcessingReportId] = useState<string | undefined>();
   const doctorId = auth.currentUser?.uid;
 
   useEffect(() => {
@@ -66,6 +69,32 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
     }
   };
 
+  const triggerAnalysis = async (report: ReportMeta) => {
+    if (!BACKEND_URL) {
+      Alert.alert('AI Summary', 'Backend URL is not configured.');
+      return;
+    }
+    try {
+      setProcessingReportId(report.id);
+      const resp = await fetch(`${BACKEND_URL}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId,
+          reportId: report.id,
+          fileUrl: report.fileUrl,
+          mimeType: report.contentType || 'image/jpeg',
+        }),
+      });
+      if (!resp.ok) throw new Error(`Backend returned ${resp.status}`);
+    } catch (e: any) {
+      console.error('AI summary trigger failed', e);
+      Alert.alert('AI Summary', 'Failed to process this report. Please try again.');
+    } finally {
+      setProcessingReportId(undefined);
+    }
+  };
+
   if (!appointment) {
     return (
       <ScreenContainer>
@@ -91,17 +120,17 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
           <View style={styles.patientInfo}>
             <Text style={styles.patientName}>{patient?.name || 'Patient'}</Text>
             <Text style={styles.pregnancyBadge}>
-              {preg ? `Week ${preg.weeks} • Month ${preg.months}` : 'No pregnancy data'}
+              {preg ? `Week ${preg.weeks} â€¢ Month ${preg.months}` : 'No pregnancy data'}
             </Text>
             {patient?.phone && (
               <View style={styles.contactRow}>
-                <Text style={styles.contactText}>📱 {patient.phone}</Text>
+                <Text style={styles.contactText}>ðŸ“± {patient.phone}</Text>
                 <TouchableOpacity 
                   style={styles.quickCallButton}
                   onPress={() => Linking.openURL(`tel:${patient.phone}`)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.quickCallIcon}>📞</Text>
+                  <Text style={styles.quickCallIcon}>ðŸ“ž</Text>
                   <Text style={styles.quickCallText}>Quick Call</Text>
                 </TouchableOpacity>
               </View>
@@ -112,7 +141,7 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
       <View style={[styles.card, styles.detailsCard]}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailIcon}>📅</Text>
+          <Text style={styles.detailIcon}>ðŸ“…</Text>
           <View style={styles.detailContent}>
             <Text style={styles.detailLabel}>Date & Time</Text>
             <Text style={styles.detailValue}>{format(date, 'EEEE, MMM d, yyyy')}</Text>
@@ -120,14 +149,14 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </View>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailIcon}>📋</Text>
+          <Text style={styles.detailIcon}>ðŸ“‹</Text>
           <View style={styles.detailContent}>
             <Text style={styles.detailLabel}>Reason</Text>
             <Text style={styles.detailValue}>{appointment.reason || 'General Consultation'}</Text>
           </View>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailIcon}>✓</Text>
+          <Text style={styles.detailIcon}>âœ“</Text>
           <View style={styles.detailContent}>
             <Text style={styles.detailLabel}>Status</Text>
             <View style={[styles.statusBadge, styles[`status_${appointment.status}`]]}>
@@ -139,7 +168,7 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
       {appointment.status === 'upcoming' && (
         <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.secondary }]}>
-          <Text style={styles.cardTitle}>📝 Visit Review</Text>
+          <Text style={styles.cardTitle}>ðŸ“ Visit Review</Text>
           <Text style={styles.meta}>Document your consultation findings</Text>
           <TextInput
             style={styles.input}
@@ -163,16 +192,16 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </TouchableOpacity>
             ))}
           </View>
-          <Button title="✓ Mark as Completed & Save" onPress={handleComplete} style={{ marginBottom: spacing.sm }} />
+          <Button title="âœ“ Mark as Completed & Save" onPress={handleComplete} style={{ marginBottom: spacing.sm }} />
           <Button title="Cancel Appointment" variant="outline" onPress={() => cancelAppointment(appointmentId)} />
         </View>
       )}
 
       <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: '#FFC107' }]}>
-        <Text style={styles.cardTitle}>📄 Medical Reports</Text>
+        <Text style={styles.cardTitle}>ðŸ“„ Medical Reports</Text>
         <Text style={styles.meta}>Upload and manage patient documents</Text>
         <Button 
-          title={uploading ? '⏳ Uploading...' : '+ Add Report (PDF/Image)'} 
+          title={uploading ? 'â³ Uploading...' : '+ Add Report (PDF/Image)'} 
           variant="outline" 
           onPress={handleUpload}
           disabled={uploading}
@@ -180,27 +209,43 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
         />
         {uploadError ? (
           <View style={{ backgroundColor: 'rgba(211, 47, 47, 0.1)', padding: spacing.sm, borderRadius: radii.md, marginBottom: spacing.sm }}>
-            <Text style={{ color: colors.critical, fontSize: typography.small }}>⚠️ {uploadError}</Text>
+            <Text style={{ color: colors.critical, fontSize: typography.small }}>âš ï¸ {uploadError}</Text>
           </View>
         ) : null}
         {reports.map((r, index) => (
-          <TouchableOpacity 
-            key={r.id} 
-            style={[styles.reportRow, index === 0 && { marginTop: spacing.md }]} 
-            onPress={() => Linking.openURL(r.fileUrl)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.meta, { color: colors.textPrimary, fontWeight: '600', marginTop: 0 }]}>
-              📎 {r.fileName}
-            </Text>
-            <Text style={[styles.meta, { fontSize: typography.small - 1, marginTop: 2 }]}>
-              Tap to view
-            </Text>
-          </TouchableOpacity>
+          <View key={r.id} style={[styles.reportRow, index === 0 && { marginTop: spacing.md }]}>
+            <TouchableOpacity 
+              onPress={() => Linking.openURL(r.fileUrl)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.meta, { color: colors.textPrimary, fontWeight: '600', marginTop: 0 }]}>
+                ðŸ“Ž {r.fileName}
+              </Text>
+              <Text style={[styles.meta, { fontSize: typography.small - 1, marginTop: 2 }]}>
+                Tap to view
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.aiButton}
+              onPress={() => triggerAnalysis(r)}
+              disabled={processingReportId === r.id}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.aiButtonText}>
+                {processingReportId === r.id ? 'Processing…' : 'Generate AI Summary'}
+              </Text>
+            </TouchableOpacity>
+            {r.analysis?.summary ? (
+              <View style={styles.analysisBox}>
+                <Text style={styles.analysisLabel}>AI Summary</Text>
+                <Text style={styles.analysisText}>{r.analysis.summary}</Text>
+              </View>
+            ) : null}
+          </View>
         ))}
         {reports.length === 0 && (
           <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
-            <Text style={{ fontSize: 32, marginBottom: spacing.xs }}>📭</Text>
+            <Text style={{ fontSize: 32, marginBottom: spacing.xs }}>ðŸ“­</Text>
             <Text style={styles.meta}>No reports uploaded yet</Text>
           </View>
         )}
@@ -414,15 +459,24 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
-  reportRow: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: '#F8F9FA',
-    borderRadius: radii.md,
+  reportRow: {\n    paddingVertical: spacing.sm,\n    paddingHorizontal: spacing.md,\n    backgroundColor: \"#F8F9FA\",\n    borderRadius: radii.md,\n    marginTop: spacing.xs,\n    borderLeftWidth: 3,\n    borderLeftColor: colors.accent,\n  },\n  aiButton: {\n    marginTop: spacing.xs,\n    backgroundColor: colors.secondary,\n    paddingVertical: 8,\n    paddingHorizontal: 12,\n    borderRadius: radii.sm,\n    alignSelf: \"flex-start\",\n  },\n  aiButtonText: {\n    color: colors.white,\n    fontWeight: \"700\",\n  },\n  analysisBox: {
     marginTop: spacing.xs,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
+    backgroundColor: '#F1F3FF',
+    padding: spacing.sm,
+    borderRadius: radii.md,
+  },
+  analysisLabel: {
+    fontWeight: '700',
+    color: colors.secondary,
+    marginBottom: spacing.xs,
+  },
+  analysisText: {
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });
 
 export default DoctorAppointmentDetailScreen;
+
+
+
