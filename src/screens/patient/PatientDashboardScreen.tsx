@@ -348,9 +348,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.heroCaption}>{caption}</Text>
         </View>
         <View style={styles.heroBadge}>
-          {patientProfile?.photoURL ? (
+          {(patientProfile as any)?.photoURL ? (
             <Image 
-              source={{ uri: patientProfile.photoURL }} 
+              source={{ uri: (patientProfile as any).photoURL }} 
               style={styles.heroProfileImage}
               resizeMode="cover"
             />
@@ -516,15 +516,6 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         />
       </View>
 
-      <View style={[styles.card, styles.cardLavender]}>
-        <View style={styles.appointmentCardHeader}>
-          <View style={styles.appointmentIconWrapper}>
-            <Text style={styles.appointmentCardIcon}>📋</Text>
-          </View>
-          <View style={styles.appointmentHeaderText}>
-            <Text style={styles.cardTitle}>Appointment Checklist</Text>
-            <Text style={styles.cardSubtitle}>Track your visits and care schedule</Text>
-          </View>
       <View style={[styles.card, styles.cardFeedback]}>
         <View style={styles.cardHeader}>
           <View>
@@ -556,7 +547,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Appointments</Text>
-          <Text style={styles.cardEmoji}>PJ</Text>
+          <Text style={styles.cardEmoji}>📅</Text>
         </View>
         <Text style={styles.cardCopy}>Review your upcoming, completed, and cancelled appointments. Stay organized with your prenatal care journey.</Text>
         <Button
@@ -565,7 +556,7 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           onPress={() => navigation.navigate('PatientAppointments')}
           style={styles.buttonSpace}
         />
-      </View>
+      </TouchableOpacity>
 
       <View style={styles.bottomSpacer} />
     </ScreenContainer>
