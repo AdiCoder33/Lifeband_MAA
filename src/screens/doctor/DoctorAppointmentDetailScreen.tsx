@@ -5,7 +5,7 @@ import Button from '../../components/Button';
 import { colors, spacing, typography, radii } from '../../theme/theme';
 import { Appointment, RiskLevel, ReportMeta } from '../../types/appointment';
 import { getAppointment, markAppointmentCompleted, cancelAppointment } from '../../services/appointmentService';
-import { subscribeAppointmentReports, uploadReportFile } from '../../services/reportService';
+import { subscribeAppointmentReports, uploadReportFileSupabase } from '../../services/reportService';
 import { auth, firestore } from '../../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -23,6 +23,8 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const [summary, setSummary] = useState('');
   const [risk, setRisk] = useState<RiskLevel | undefined>();
   const [reports, setReports] = useState<ReportMeta[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const doctorId = auth.currentUser?.uid;
 
   useEffect(() => {
@@ -46,8 +48,22 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
   };
 
   const handleUpload = async () => {
-    if (!doctorId || !appointment?.patientId) return;
-    await uploadReportFile(doctorId, appointment.patientId, appointmentId);
+    if (!doctorId || !appointment?.patientId) {
+      setUploadError('Missing doctor or patient.');
+      return;
+    }
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const res = await uploadReportFileSupabase(doctorId, appointment.patientId, appointmentId);
+      if (!res) {
+        setUploadError('Upload canceled.');
+      }
+    } catch (e: any) {
+      setUploadError(e?.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (!appointment) {
@@ -103,7 +119,8 @@ const DoctorAppointmentDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Reports</Text>
-        <Button title="Add Report (PDF/Image)" variant="outline" onPress={handleUpload} />
+        <Button title={uploading ? 'Uploading...' : 'Add Report (PDF/Image)'} variant="outline" onPress={handleUpload} />
+        {uploadError ? <Text style={[styles.meta, { color: colors.critical }]}>{uploadError}</Text> : null}
         {reports.map((r) => (
           <TouchableOpacity key={r.id} style={styles.reportRow} onPress={() => Linking.openURL(r.fileUrl)}>
             <Text style={styles.meta}>{r.fileName}</Text>
