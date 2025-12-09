@@ -456,23 +456,24 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         />
       </View>
 
-      <TouchableOpacity
-        style={[styles.card, styles.cardLavender]}
-        activeOpacity={0.9}
-        onPress={() => navigation.navigate('AppointmentsCalendar')}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Appointments</Text>
-          <Text style={styles.cardEmoji}>PJ</Text>
+      <View style={[styles.card, styles.cardLavender]}>
+        <View style={styles.appointmentCardHeader}>
+          <View style={styles.appointmentIconWrapper}>
+            <Text style={styles.appointmentCardIcon}>📋</Text>
+          </View>
+          <View style={styles.appointmentHeaderText}>
+            <Text style={styles.cardTitle}>Appointment Checklist</Text>
+            <Text style={styles.cardSubtitle}>Track your visits and care schedule</Text>
+          </View>
         </View>
-        <Text style={styles.cardCopy}>Open your calendar to review upcoming visits and plan ahead.</Text>
+        <Text style={styles.cardCopy}>Review your upcoming, completed, and cancelled appointments. Stay organized with your prenatal care journey.</Text>
         <Button
-          title="View Checklist"
-          variant="outline"
+          title="📋 View Checklist"
+          variant="primary"
           onPress={() => navigation.navigate('PatientAppointments')}
           style={styles.buttonSpace}
         />
-      </TouchableOpacity>
+      </View>
 
       <View style={styles.bottomSpacer} />
     </ScreenContainer>
@@ -956,6 +957,26 @@ const styles = StyleSheet.create({
     height: 24,
     transform: [{ scale: 2.2 }],  // adjust zoom as needed
     marginRight: spacing.sm,
+  },
+  appointmentCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  appointmentIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  appointmentCardIcon: {
+    fontSize: 28,
+  },
+  appointmentHeaderText: {
+    flex: 1,
   },
 });
 
