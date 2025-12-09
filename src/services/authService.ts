@@ -1,5 +1,3 @@
-import * as Google from 'expo-auth-session/providers/google';
-import { AuthSessionResult } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import {
   createUserWithEmailAndPassword,
@@ -10,7 +8,7 @@ import {
   signInWithCredential,
   User,
 } from 'firebase/auth';
-import { useCallback } from 'react';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { auth } from './firebase';
 
 const extra =
@@ -18,11 +16,29 @@ const extra =
 const googleOAuthExtra = (extra?.googleOAuth ?? {}) as Record<string, string | undefined>;
 
 const googleConfig = {
-  expoClientId:
-    process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || googleOAuthExtra.expoClientId || 'YOUR_EXPO_CLIENT_ID',
   iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || googleOAuthExtra.iosClientId,
   androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || googleOAuthExtra.androidClientId,
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || googleOAuthExtra.webClientId,
+};
+
+let googleConfigured = false;
+
+const ensureGoogleConfigured = () => {
+  if (googleConfigured) {
+    return;
+  }
+  if (!googleConfig.webClientId) {
+    throw new Error(
+      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Please configure your Google web client ID in .env.',
+    );
+  }
+  GoogleSignin.configure({
+    webClientId: googleConfig.webClientId,
+    iosClientId: googleConfig.iosClientId,
+    offlineAccess: false,
+    forceCodeForRefreshToken: false,
+  });
+  googleConfigured = true;
 };
 
 export const signUpWithEmail = async (name: string, email: string, password: string): Promise<User> => {
@@ -37,29 +53,33 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 };
 
 export const signOutUser = async (): Promise<void> => {
-  await signOut(auth);
+  try {
+    ensureGoogleConfigured();
+    await GoogleSignin.signOut();
+  } catch (error) {
+    console.warn('Google sign-out failed', error);
+  } finally {
+    await signOut(auth);
+  }
 };
 
-export const useGoogleAuth = () => {
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: googleConfig.expoClientId,
-    iosClientId: googleConfig.iosClientId,
-    androidClientId: googleConfig.androidClientId,
-    webClientId: googleConfig.webClientId,
-  });
+export const signInWithGoogle = async (idToken: string): Promise<User> => {
+  const credential = GoogleAuthProvider.credential(idToken);
+  const userCredential = await signInWithCredential(auth, credential);
+  return userCredential.user;
+};
 
-  const signInWithGoogleResponse = useCallback(async (result: AuthSessionResult): Promise<User | null> => {
-    if (result.type !== 'success') {
-      return null;
-    }
-    const idToken = (result.params as Record<string, string | undefined>).id_token;
-    if (!idToken) {
-      throw new Error('Missing Google ID token');
-    }
-    const credential = GoogleAuthProvider.credential(idToken);
-    const userCredential = await signInWithCredential(auth, credential);
-    return userCredential.user;
-  }, []);
-
-  return { request, response, promptAsync, signInWithGoogleResponse };
+export const signInWithGoogleNative = async (): Promise<User> => {
+  ensureGoogleConfigured();
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  const result = await GoogleSignin.signIn();
+  let idToken = result.idToken;
+  if (!idToken) {
+    const tokens = await GoogleSignin.getTokens();
+    idToken = tokens?.idToken;
+  }
+  if (!idToken) {
+    throw new Error('Missing Google ID token');
+  }
+  return signInWithGoogle(idToken);
 };

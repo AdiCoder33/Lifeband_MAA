@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../../components/ScreenContainer';
 import { Calendar, DateData } from 'react-native-calendars';
 import { colors, spacing, typography, radii } from '../../theme/theme';
@@ -18,6 +18,44 @@ const resolveDate = (value: Appointment['scheduledAt']): Date => {
     return maybeFirestore.toDate();
   }
   return new Date(value as any);
+};
+
+type DayStatus = 'upcoming' | 'completed' | 'cancelled' | 'other' | 'selected-only';
+
+const STATUS_COLORS: Record<Exclude<DayStatus, 'selected-only'>, string> = {
+  upcoming: colors.secondary,
+  completed: '#2E7D32',
+  cancelled: colors.critical,
+  other: colors.textSecondary,
+};
+
+const getDayStatus = (items: Appointment[] = []): DayStatus => {
+  if (!items.length) return 'other';
+  const normalized = items.map((appt) => (appt.status || '').toLowerCase().trim());
+  if (normalized.some((status) => status === 'completed')) return 'completed';
+  if (normalized.some((status) => status === 'upcoming' || status === 'scheduled')) return 'upcoming';
+  if (normalized.some((status) => status === 'cancelled')) return 'cancelled';
+  return 'other';
+};
+
+const buildCustomStyles = (status: DayStatus, isSelected: boolean): { container: ViewStyle; text: TextStyle } => {
+  const baseColor = status === 'selected-only' ? colors.primary : STATUS_COLORS[status as keyof typeof STATUS_COLORS] || colors.textSecondary;
+  return {
+    container: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: isSelected ? 0 : 2,
+      borderColor: baseColor,
+      backgroundColor: isSelected ? baseColor : colors.card,
+    },
+    text: {
+      color: isSelected ? colors.white : colors.textPrimary,
+      fontWeight: '700',
+    },
+  };
 };
 
 const AppointmentsCalendarScreen: React.FC = () => {
@@ -93,24 +131,35 @@ const AppointmentsCalendarScreen: React.FC = () => {
   }, [appointments]);
 
   const markedDates = useMemo(() => {
-    const marks: Record<string, { marked?: boolean; dotColor?: string; selected?: boolean; selectedColor?: string }> = {};
+    const marks: Record<
+      string,
+      {
+        selected?: boolean;
+        customStyles?: {
+          container?: ViewStyle;
+          text?: TextStyle;
+        };
+      }
+    > = {};
+
     Object.keys(groupedByDay).forEach((date) => {
+      const status = getDayStatus(groupedByDay[date]);
+      const isSelected = date === selectedDate;
       marks[date] = {
-        marked: true,
-        dotColor: colors.secondary,
-        selected: date === selectedDate,
-        selectedColor: colors.primary,
+        selected: isSelected,
+        customStyles: buildCustomStyles(status, isSelected),
       };
     });
+
     if (!marks[selectedDate]) {
       marks[selectedDate] = {
         selected: true,
-        selectedColor: colors.primary,
+        customStyles: buildCustomStyles('selected-only', true),
       };
-    } else {
-      marks[selectedDate].selected = true;
-      marks[selectedDate].selectedColor = colors.primary;
+    } else if (!marks[selectedDate].customStyles && marks[selectedDate].selected) {
+      marks[selectedDate].customStyles = buildCustomStyles('selected-only', true);
     }
+
     return marks;
   }, [groupedByDay, selectedDate]);
 
@@ -129,15 +178,30 @@ const AppointmentsCalendarScreen: React.FC = () => {
         <Text style={styles.subtitle}>Tap a date to review visits and plan your week.</Text>
         <View style={styles.calendarWrapper}>
           <Calendar
+            markingType="custom"
             onDayPress={onDayPress}
             markedDates={markedDates}
             theme={{
               arrowColor: colors.secondary,
               todayTextColor: colors.secondary,
-              selectedDayBackgroundColor: colors.primary,
-              selectedDayTextColor: colors.white,
+              textDayFontWeight: '600',
+              textMonthFontWeight: '800',
             }}
           />
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { borderColor: colors.secondary }]} />
+              <Text style={styles.legendLabel}>Upcoming</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { borderColor: STATUS_COLORS.completed }]} />
+              <Text style={styles.legendLabel}>Completed</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { borderColor: colors.critical }]} />
+              <Text style={styles.legendLabel}>Cancelled</Text>
+            </View>
+          </View>
         </View>
         <View style={styles.detailCard}>
           <Text style={styles.detailTitle}>{format(new Date(selectedDate), 'MMMM d, yyyy')}</Text>
@@ -195,6 +259,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendIndicator: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    marginRight: spacing.xs,
+  },
+  legendLabel: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   detailCard: {
     backgroundColor: colors.card,

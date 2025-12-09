@@ -49,8 +49,8 @@ const formatTime = (timestamp?: number) => {
 };
 
 const getGreeting = () => {
-  const istTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-  const hour = new Date(istTime).getHours();
+  const now = new Date();
+  const hour = now.getHours();
   
   if (hour >= 5 && hour < 12) {
     return {
@@ -143,12 +143,28 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   }, [patientSummaries]);
 
   const handleSignOut = useCallback(async () => {
-    try {
-      await signOutUser();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Sign out failed', message);
-    }
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOutUser();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Please try again.';
+              Alert.alert('Sign out failed', message);
+            }
+          },
+        },
+      ],
+    );
   }, []);
 
   const handleReviewPatient = useCallback(() => {
@@ -228,26 +244,54 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       Object.values(patientUnsubs.current).forEach((u) => u && u());
       patientUnsubs.current = {};
 
-      const summaries: PatientSummaryEntry[] = [];
+      if (snap.empty) {
+        setPatientSummaries([]);
+        setPatientCount(0);
+        return;
+      }
+
+      const patientIds: string[] = [];
+      const profiles: Record<string, UserProfile> = {};
+
+      // First, get all patient profiles
       for (const d of snap.docs) {
         const patientId = (d.data() as any).patientId;
+        if (!patientId) continue;
+        
         const psnap = await getDoc(doc(firestore, 'users', patientId));
         if (!psnap.exists()) continue;
+        
         const profile = psnap.data() as UserProfile;
-        const defaultSummary = { profile, vitals: null };
-        summaries.push(defaultSummary);
+        profiles[patientId] = profile;
+        patientIds.push(patientId);
+        
+        // Initialize with null vitals
+        setPatientSummaries((prev) => {
+          const existing = prev.find(p => p.profile.uid === patientId);
+          if (existing) return prev;
+          return [...prev, { profile, vitals: null }];
+        });
 
+        // Subscribe to real-time vitals updates for this patient
         const unsubVitals = subscribeToLatestVitals(patientId, (sample) => {
+          console.log(`[DOCTOR DASHBOARD] Received vitals for patient ${patientId}:`, sample?.hr, sample?.timestamp);
           setPatientSummaries((prev) => {
             const other = prev.filter((p) => p.profile.uid !== patientId);
-            return [...other, { profile, vitals: sample }];
+            return [...other, { profile, vitals: sample }].sort((a, b) => 
+              a.profile.name.localeCompare(b.profile.name)
+            );
           });
         });
         patientUnsubs.current[patientId] = unsubVitals;
       }
-      setPatientSummaries(summaries);
-      setPatientCount(summaries.length);
+
+      // Remove patients that are no longer linked
+      setPatientSummaries((prev) => 
+        prev.filter(p => patientIds.includes(p.profile.uid))
+      );
+      setPatientCount(patientIds.length);
     });
+    
     return () => {
       unsub();
       Object.values(patientUnsubs.current).forEach((u) => u && u());
@@ -383,7 +427,35 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              renderItem={({ item: page }) => (
+              renderItem={({ item: page }) => {
+                // Sort page to show high/medium risk first, then normal
+                const sortedPage = [...page].sort((a, b) => {
+                  const getRiskScore = (patient: typeof a) => {
+                    if (!patient.vitals) return -1;
+                    let score = 0;
+                    
+                    // High risk conditions
+                    if (patient.vitals.arrhythmia_alert) score += 10;
+                    if (patient.vitals.anemia_alert) score += 10;
+                    if (patient.vitals.preeclampsia_alert) score += 10;
+                    if (patient.vitals.anemia_risk === 'Critical' || patient.vitals.anemia_risk === 'High') score += 8;
+                    if (patient.vitals.preeclampsia_risk === 'Critical' || patient.vitals.preeclampsia_risk === 'High') score += 8;
+                    
+                    // Medium risk conditions
+                    if (patient.vitals.anemia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.preeclampsia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.rhythm && patient.vitals.rhythm !== 'Normal') score += 3;
+                    
+                    return score;
+                  };
+                  
+                  return getRiskScore(b) - getRiskScore(a);
+                });
+                
+                // Take top 3 patients
+                const displayPatients = sortedPage.slice(0, 3);
+                
+                return (
                 <View style={styles.tablePage}>
                   <View style={styles.tableHeader}>
                     <View style={styles.cellName}>
@@ -402,39 +474,71 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                       <Text style={styles.headerCell}>Status</Text>
                     </View>
                   </View>
-                  {page.map((p, idx) => {
-                    // Check all conditions from vitals data
-                    const conditions: string[] = [];
+                  {displayPatients.map((p, idx) => {
+                    // Check all conditions from vitals data with severity levels
+                    let statusText = 'Normal';
+                    let statusColor = colors.healthy;
+                    let severity = 0; // 0=normal, 1=medium, 2=high
                     
-                    if (p.vitals) {
-                      // Check Arrhythmia
+                    if (!p.vitals) {
+                      statusText = 'No Data';
+                      statusColor = colors.muted;
+                    } else {
+                      const highConditions: string[] = [];
+                      const mediumConditions: string[] = [];
+                      
+                      // High severity checks
                       if (p.vitals.arrhythmia_alert) {
-                        conditions.push('Arrhythmia');
-                      } else if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal') {
-                        conditions.push(p.vitals.rhythm);
+                        highConditions.push('Arrhythmia');
                       }
-                      
-                      // Check Anemia
                       if (p.vitals.anemia_alert) {
-                        conditions.push('Anemia');
-                      } else if (p.vitals.anemia_risk && p.vitals.anemia_risk !== 'Low') {
-                        conditions.push(`${p.vitals.anemia_risk} Anemia`);
+                        highConditions.push('Anemia');
+                      }
+                      if (p.vitals.preeclampsia_alert) {
+                        highConditions.push('Preeclampsia');
+                      }
+                      if (p.vitals.anemia_risk === 'Critical' || p.vitals.anemia_risk === 'High') {
+                        highConditions.push(`${p.vitals.anemia_risk} Anemia`);
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Critical' || p.vitals.preeclampsia_risk === 'High') {
+                        highConditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
                       }
                       
-                      // Check Preeclampsia
-                      if (p.vitals.preeclampsia_alert) {
-                        conditions.push('Preeclampsia');
-                      } else if (p.vitals.preeclampsia_risk && p.vitals.preeclampsia_risk !== 'Low') {
-                        conditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
+                      // Medium severity checks
+                      if (p.vitals.anemia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Anemia');
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Preeclampsia');
+                      }
+                      if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal' && !p.vitals.arrhythmia_alert) {
+                        mediumConditions.push(p.vitals.rhythm);
+                      }
+                      
+                      // Determine status priority: High > Medium > Normal
+                      if (highConditions.length > 0) {
+                        statusText = highConditions[0];
+                        statusColor = colors.critical; // Red
+                        severity = 2;
+                      } else if (mediumConditions.length > 0) {
+                        statusText = mediumConditions[0];
+                        statusColor = colors.attention; // Orange
+                        severity = 1;
                       }
                     }
                     
-                    // Determine status - if any critical condition exists, show it; otherwise Normal
-                    const statusText = !p.vitals ? 'No Data' : conditions.length > 0 ? conditions[0] : 'Normal';
-                    const statusColor = !p.vitals ? colors.muted : conditions.length > 0 ? colors.critical : colors.healthy;
+                    // Determine row background color based on severity
+                    let rowBackgroundColor = '#F1F8F4'; // Light green for normal
+                    if (!p.vitals) {
+                      rowBackgroundColor = '#F5F5F5'; // Light gray for no data
+                    } else if (severity === 2) {
+                      rowBackgroundColor = '#FFEBEE'; // Light red for high risk
+                    } else if (severity === 1) {
+                      rowBackgroundColor = '#FFF4E5'; // Light orange for medium risk
+                    }
                     
                     return (
-                    <View key={p.profile.uid} style={[styles.tableRow, idx === page.length - 1 && styles.tableRowLast]}>
+                    <View key={p.profile.uid} style={[styles.tableRow, idx === displayPatients.length - 1 && styles.tableRowLast, { backgroundColor: rowBackgroundColor }]}>
                       <View style={styles.cellName}>
                         <Text style={styles.patientName} numberOfLines={1}>{p.profile.name}</Text>
                         <Text style={styles.patientMeta} numberOfLines={1}>
@@ -466,7 +570,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                     </View>
                   )})}
                 </View>
-              )}
+              )}}
             />
             {patientPages.length > 1 && (
               <View style={styles.paginationHint}>
@@ -499,7 +603,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0D7377',
+    backgroundColor: colors.primary,
     padding: spacing.lg,
     borderRadius: radii.lg,
     marginHorizontal: spacing.md,
@@ -516,11 +620,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   heroSubtitle: {
-    color: '#E0E4FF',
+    color: '#FDF0F0',
     marginBottom: spacing.xs,
   },
   heroCaption: {
-    color: '#CBD0FF',
+    color: '#FFE5E5',
     fontSize: typography.small,
   },
   heroBadge: {
@@ -782,7 +886,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   tablePage: {
-    width: 500,
+    width: 520,
   },
   apptRow: {
     flexDirection: 'row',
@@ -810,7 +914,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 2,
     borderBottomColor: '#FFC107',
     backgroundColor: '#FFFBF0',
@@ -820,11 +924,11 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 193, 7, 0.2)',
-    backgroundColor: colors.white,
+    // backgroundColor will be set dynamically based on patient status
   },
   tableRowLast: {
     borderBottomWidth: 0,
@@ -839,30 +943,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   cellName: {
-    flex: 2,
-    marginRight: spacing.md,
+    flex: 0.6,
+    paddingRight: spacing.xs,
   },
   cellVital: {
-    flex: 1.2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cellStatus: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cellStatus: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cellValue: {
-    fontSize: typography.body,
-    fontWeight: '600',
+    fontSize: typography.small,
+    fontWeight: '700',
     color: colors.textPrimary,
     textAlign: 'center',
   },
   cellUnit: {
-    fontSize: 10,
+    fontSize: 9,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 1,
   },
   statusBadge: {
     paddingVertical: 4,
@@ -878,12 +982,12 @@ const styles = StyleSheet.create({
   },
   patientName: {
     fontWeight: '700',
-    fontSize: typography.body,
+    fontSize: typography.small,
     color: colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   patientMeta: {
-    fontSize: typography.small,
+    fontSize: 11,
     color: colors.textSecondary,
   },
   paginationHint: {

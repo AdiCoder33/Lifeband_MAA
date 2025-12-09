@@ -25,7 +25,14 @@ const PatientStack: React.FC<Props> = ({ profile }) => {
     <Stack.Navigator>
       <Stack.Screen
         name="PatientHome"
-        options={{ title: 'LifeBand MAA' }}
+        options={{ 
+          title: 'LifeBand Maa',
+          headerTitleAlign: 'left',
+          headerTitleStyle: {
+            fontSize: 18,
+            fontWeight: '700',
+          }
+        }}
       >
         {(screenProps) => <PatientDashboardScreen {...screenProps} profile={profile} />}
       </Stack.Screen>

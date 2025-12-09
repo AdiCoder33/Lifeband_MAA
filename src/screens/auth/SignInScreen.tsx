@@ -24,7 +24,8 @@ import ScreenContainer from '../../components/ScreenContainer';
 import TextInput from '../../components/TextInput';
 import { AuthStackParamList } from '../../types/navigation';
 import { colors, shadows, spacing, typography } from '../../theme/theme';
-import { signInWithEmail, useGoogleAuth } from '../../services/authService';
+import { signInWithEmail, signInWithGoogleNative } from '../../services/authService';
+import { getUserProfile } from '../../services/userService';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
@@ -99,7 +100,6 @@ const SignInScreen: React.FC<Props> = ({ navigation }) => {
   const [error, setError] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
 
-  const { request, response, promptAsync, signInWithGoogleResponse } = useGoogleAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const formOpacity = useRef(new Animated.Value(0)).current;
@@ -133,25 +133,21 @@ const SignInScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  useEffect(() => {
-    const handleGoogle = async () => {
-      if (!response) {
-        return;
+  const handleGoogleSignIn = useCallback(async () => {
+    try {
+      setError(null);
+      setGoogleLoading(true);
+      const user = await signInWithGoogleNative();
+      if (user) {
+        await getUserProfile(user.uid);
       }
-
-      try {
-        setGoogleLoading(true);
-        await signInWithGoogleResponse(response);
-      } catch (err) {
-        console.error(err);
-        setError('Google sign-in failed. Try again.');
-      } finally {
-        setGoogleLoading(false);
-      }
-    };
-
-    handleGoogle();
-  }, [response, signInWithGoogleResponse]);
+    } catch (err) {
+      console.error(err);
+      setError('Google sign-in failed. Try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     Animated.parallel([
@@ -303,9 +299,9 @@ const SignInScreen: React.FC<Props> = ({ navigation }) => {
               {renderAnimatedButton(
                 'Continue with Google',
                 1,
-                () => promptAsync(),
+                handleGoogleSignIn,
                 'google',
-                !request || googleLoading,
+                googleLoading,
                 googleLoading,
                 !googleLoading ? <GoogleIcon /> : null,
               )}

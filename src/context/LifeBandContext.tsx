@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebase';
-import { saveAggregatedVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
+import { saveAggregatedVitalsSample, saveVitalsSample, subscribeToLatestVitals } from '../services/vitalsService';
 import {
   BleConnectionState,
   LifeBandState,
@@ -94,6 +94,7 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   // Subscribe to latest vitals in Firestore to sync UI even if app restarts
+  // BUT: Don't overwrite real-time BLE data when connected!
   useEffect(() => {
     if (!uid) return;
     latestSubRef.current?.();
@@ -103,30 +104,24 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (!sample) {
-        if (liveSampleRef.current) {
-          return;
+        // Only clear vitals if NOT connected to LifeBand
+        if (connectionStateRef.current !== 'connected') {
+          setLatestVitals(null);
         }
-        setLatestVitals(null);
         return;
       }
 
       const normalizedSample = ensureLastSampleTimestamp(sample);
-      const cloudTimestamp = resolveSampleTimestamp(normalizedSample);
-      const liveTimestamp = resolveSampleTimestamp(liveSampleRef.current);
-
-      if (
-        liveSampleRef.current &&
-        connectionStateRef.current === 'connected' &&
-        liveTimestamp >= cloudTimestamp
-      ) {
-        return;
-      }
-
+      
+      // Only use Firestore data when NOT receiving real-time BLE data
+      // This prevents overwriting live vitals with old aggregated data
       if (connectionStateRef.current !== 'connected') {
-        liveSampleRef.current = null;
+        console.log('[CONTEXT] Firestore vitals update (not connected):', normalizedSample.hr, normalizedSample.timestamp);
+        setLatestVitals(normalizedSample);
+        liveSampleRef.current = normalizedSample;
+      } else {
+        console.log('[CONTEXT] Ignoring Firestore update - using real-time BLE data');
       }
-
-      setLatestVitals(normalizedSample);
     });
     return () => latestSubRef.current?.();
   }, [uid]);
@@ -240,6 +235,10 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const errorMsg = error?.reason || error?.message || 'Unknown error';
         console.warn('[CONTEXT] Aggregate save failed:', errorMsg);
       });
+      
+      // Immediately update local state for real-time display
+      liveSampleRef.current = enrichedSample;
+      setLatestVitals(enrichedSample);
     },
     [persistAggregation, uid],
   );
@@ -258,14 +257,15 @@ export const LifeBandProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         liveSampleRef.current = enrichedSample;
         setLatestVitals(enrichedSample);
         
-        // Persist aggregated vitals snapshot in the background
+        // Only save aggregated 30-min averages to Firebase (not every reading)
+        // This reduces Firebase writes and storage costs
         recordAggregatedSample(enrichedSample);
       } catch (error: any) {
         const errorMsg = error?.reason || error?.message || 'Unknown error';
         console.error('[CONTEXT] handleVitals error:', errorMsg);
       }
     },
-    [recordAggregatedSample],
+    [recordAggregatedSample, uid],
   );
 
   const connectLifeBand = useCallback(async () => {
