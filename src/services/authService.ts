@@ -27,18 +27,34 @@ const ensureGoogleConfigured = () => {
   if (googleConfigured) {
     return;
   }
+  
+  console.log('Google Config:', {
+    webClientId: googleConfig.webClientId ? '✓ Set' : '✗ Missing',
+    androidClientId: googleConfig.androidClientId ? '✓ Set' : '✗ Missing',
+    iosClientId: googleConfig.iosClientId ? '✓ Set' : '✗ Missing',
+  });
+  
   if (!googleConfig.webClientId) {
     throw new Error(
       'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Please configure your Google web client ID in .env.',
     );
   }
-  GoogleSignin.configure({
-    webClientId: googleConfig.webClientId,
-    iosClientId: googleConfig.iosClientId,
-    offlineAccess: false,
-    forceCodeForRefreshToken: false,
-  });
-  googleConfigured = true;
+  
+  try {
+    GoogleSignin.configure({
+      webClientId: googleConfig.webClientId,
+      iosClientId: googleConfig.iosClientId,
+      offlineAccess: false,
+      forceCodeForRefreshToken: false,
+    });
+    googleConfigured = true;
+    console.log('Google Sign-In configured successfully');
+  } catch (error) {
+    console.error('Failed to configure Google Sign-In:', error);
+    throw new Error(
+      'Google Sign-In configuration failed. Make sure SHA-1 fingerprint is added to Firebase Console. See GOOGLE_SIGNIN_SETUP.md for instructions.',
+    );
+  }
 };
 
 export const signUpWithEmail = async (name: string, email: string, password: string): Promise<User> => {
@@ -70,16 +86,26 @@ export const signInWithGoogle = async (idToken: string): Promise<User> => {
 };
 
 export const signInWithGoogleNative = async (): Promise<User> => {
-  ensureGoogleConfigured();
-  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-  const result = await GoogleSignin.signIn();
-  let idToken = result.idToken;
-  if (!idToken) {
-    const tokens = await GoogleSignin.getTokens();
-    idToken = tokens?.idToken;
+  try {
+    ensureGoogleConfigured();
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const result = await GoogleSignin.signIn();
+    let idToken = result.idToken;
+    if (!idToken) {
+      const tokens = await GoogleSignin.getTokens();
+      idToken = tokens?.idToken;
+    }
+    if (!idToken) {
+      throw new Error('Missing Google ID token');
+    }
+    return signInWithGoogle(idToken);
+  } catch (error: any) {
+    console.error('Google Sign-In Error:', error);
+    if (error.code === 'DEVELOPER_ERROR') {
+      throw new Error(
+        'Google Sign-In setup incomplete. Please add SHA-1 fingerprint to Firebase Console. Run: cd android && .\\gradlew signingReport && cd .. to get your SHA-1.',
+      );
+    }
+    throw error;
   }
-  if (!idToken) {
-    throw new Error('Missing Google ID token');
-  }
-  return signInWithGoogle(idToken);
 };
