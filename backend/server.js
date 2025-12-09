@@ -23,6 +23,7 @@ if (!MEDITRON_URL || !MEDITRON_KEY) {
 // Support either a path to the service account JSON or the raw JSON in env
 const rawCred =
   process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+  process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON_B64 ||
   process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
 if (!rawCred) {
@@ -32,11 +33,18 @@ if (!rawCred) {
 
 let credentialObj;
 try {
-  if (rawCred.trim().startsWith('{')) {
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON_B64) {
+    const decoded = Buffer.from(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON_B64, 'base64').toString('utf-8');
+    credentialObj = JSON.parse(decoded);
+  } else if (rawCred.trim().startsWith('{')) {
     credentialObj = JSON.parse(rawCred);
   } else {
     const fileData = fs.readFileSync(rawCred, 'utf-8');
     credentialObj = JSON.parse(fileData);
+  }
+  // Normalize private key newlines in case they arrived as \n literals
+  if (credentialObj?.private_key) {
+    credentialObj.private_key = credentialObj.private_key.replace(/\\n/g, '\n');
   }
 } catch (err) {
   console.error('Failed to load service account credentials', err);
