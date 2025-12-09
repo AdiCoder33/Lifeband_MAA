@@ -60,7 +60,7 @@ module.exports = {
     web: {
       favicon: './assets/favicon.png',
     },
-    plugins: ['expo-camera', 'expo-document-picker', 'expo-asset'],
+    plugins: ['expo-camera', 'expo-document-picker', 'expo-asset', '@react-native-google-signin/google-signin'],
     extra: {
       eas: {
         projectId: '561d6199-873a-4ec2-b46e-0460eba170cb',

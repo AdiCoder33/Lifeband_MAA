@@ -33,6 +33,7 @@ export type DoctorStackParamList = {
   DoctorHome: undefined;
   DoctorQR: undefined;
   DoctorPatients: undefined;
+  DoctorPatientDetail: { patientId: string };
   DoctorAppointments: undefined;
   DoctorAppointmentDetail: { appointmentId: string };
   DoctorCreateAppointment: undefined;

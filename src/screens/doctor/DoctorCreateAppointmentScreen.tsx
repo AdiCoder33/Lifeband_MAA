@@ -9,8 +9,12 @@ import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { UserProfile } from '../../types/user';
 import { createAppointment } from '../../services/appointmentService';
 import { format } from 'date-fns';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DoctorStackParamList } from '../../types/navigation';
 
-const DoctorCreateAppointmentScreen: React.FC = () => {
+type Props = NativeStackScreenProps<DoctorStackParamList, 'DoctorCreateAppointment'>;
+
+const DoctorCreateAppointmentScreen: React.FC<Props> = ({ navigation }) => {
   const uid = auth.currentUser?.uid;
   const [patients, setPatients] = useState<UserProfile[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<UserProfile | null>(null);
@@ -42,10 +46,17 @@ const DoctorCreateAppointmentScreen: React.FC = () => {
     try {
       setLoading(true);
       await createAppointment(uid, selectedPatient.uid, dateValue, reason || undefined);
-      Alert.alert('Created', 'Appointment created.');
-      setReason('');
-      setDateValue(new Date());
-      setSelectedPatient(null);
+      Alert.alert('Success', 'Appointment created successfully', [
+        {
+          text: 'OK',
+          onPress: () => {
+            setReason('');
+            setDateValue(new Date());
+            setSelectedPatient(null);
+            navigation.navigate('DoctorAppointments');
+          }
+        }
+      ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Could not create appointment.');
     } finally {
@@ -55,7 +66,9 @@ const DoctorCreateAppointmentScreen: React.FC = () => {
 
   return (
     <ScreenContainer scrollable>
-      <Text style={styles.title}>New Appointment</Text>
+      <View style={styles.header}>
+        <Text style={styles.subtitle}>Schedule a new consultation</Text>
+      </View>
       <Text style={styles.label}>Select Patient</Text>
       <FlatList
         data={patients}
@@ -127,67 +140,110 @@ const DoctorCreateAppointmentScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  header: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  subtitle: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
   title: {
-    fontSize: typography.heading,
+    fontSize: typography.heading + 2,
     fontWeight: '800',
     color: colors.secondary,
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
   },
   label: {
     paddingHorizontal: spacing.lg,
     color: colors.textPrimary,
     fontWeight: '700',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+    fontSize: typography.small + 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   patientRow: {
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
     gap: spacing.sm,
   },
   patientChip: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border || '#E0E0E0',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#E9ECEF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   patientChipActive: {
     backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
+    shadowColor: colors.secondary,
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   patientText: {
     color: colors.textPrimary,
-    fontWeight: '700',
+    fontWeight: '600',
+    fontSize: typography.small + 1,
   },
   patientTextActive: {
     color: colors.white,
+    fontWeight: '700',
   },
   inputButton: {
-    borderWidth: 1,
-    borderColor: colors.border || '#E0E0E0',
-    borderRadius: radii.md,
-    padding: spacing.md,
+    borderWidth: 2,
+    borderColor: '#E9ECEF',
+    borderRadius: radii.lg,
+    padding: spacing.md + 2,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
-    backgroundColor: colors.card,
+    backgroundColor: colors.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   inputText: {
     color: colors.textPrimary,
-    fontWeight: '700',
+    fontWeight: '600',
+    fontSize: typography.body,
   },
   inputBox: {
-    borderWidth: 1,
-    borderColor: colors.border || '#E0E0E0',
-    borderRadius: radii.md,
-    padding: spacing.md,
+    borderWidth: 2,
+    borderColor: '#E9ECEF',
+    borderRadius: radii.lg,
+    padding: spacing.md + 2,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xl + spacing.lg,
     color: colors.textPrimary,
+    fontSize: typography.body,
+    backgroundColor: colors.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    minHeight: 100,
+    textAlignVertical: 'top',
   },
   meta: {
     color: colors.textSecondary,
     paddingHorizontal: spacing.lg,
+    fontSize: typography.small,
+    fontStyle: 'italic',
   },
 });
 

@@ -49,8 +49,8 @@ const formatTime = (timestamp?: number) => {
 };
 
 const getGreeting = () => {
-  const istTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-  const hour = new Date(istTime).getHours();
+  const now = new Date();
+  const hour = now.getHours();
   
   if (hour >= 5 && hour < 12) {
     return {
@@ -81,6 +81,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const [upcoming, setUpcoming] = useState<Appointment[]>([]);
   const [nextAppointments, setNextAppointments] = useState<Appointment[]>([]);
   const [patientSummaries, setPatientSummaries] = useState<PatientSummaryEntry[]>([]);
+  const [patientProfiles, setPatientProfiles] = useState<Record<string, UserProfile>>({});
   const patientUnsubs = useRef<Record<string, () => void>>({});
 
   const patientPages = useMemo(() => {
@@ -143,12 +144,28 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   }, [patientSummaries]);
 
   const handleSignOut = useCallback(async () => {
-    try {
-      await signOutUser();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Sign out failed', message);
-    }
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOutUser();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Please try again.';
+              Alert.alert('Sign out failed', message);
+            }
+          },
+        },
+      ],
+    );
   }, []);
 
   const handleReviewPatient = useCallback(() => {
@@ -206,7 +223,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   useEffect(() => {
     if (!uid) return;
-    const unsub = subscribeDoctorAppointments(uid, (appts) => {
+    const unsub = subscribeDoctorAppointments(uid, async (appts) => {
       const now = new Date();
       const upcoming = appts.filter((a) => a.status === 'upcoming' && new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt) >= now);
       setUpcoming(upcoming);
@@ -216,6 +233,22 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           new Date((b.scheduledAt as any).toDate ? (b.scheduledAt as any).toDate() : b.scheduledAt).getTime(),
       );
       setNextAppointments(sorted.slice(0, 3));
+      
+      // Load patient profiles for appointments
+      const profiles: Record<string, UserProfile> = {};
+      for (const appt of sorted.slice(0, 3)) {
+        if (appt.patientId && !profiles[appt.patientId]) {
+          try {
+            const psnap = await getDoc(doc(firestore, 'users', appt.patientId));
+            if (psnap.exists()) {
+              profiles[appt.patientId] = psnap.data() as UserProfile;
+            }
+          } catch (e) {
+            console.error('Error loading patient profile:', e);
+          }
+        }
+      }
+      setPatientProfiles(profiles);
     });
     return () => unsub();
   }, [uid]);
@@ -228,26 +261,54 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       Object.values(patientUnsubs.current).forEach((u) => u && u());
       patientUnsubs.current = {};
 
-      const summaries: PatientSummaryEntry[] = [];
+      if (snap.empty) {
+        setPatientSummaries([]);
+        setPatientCount(0);
+        return;
+      }
+
+      const patientIds: string[] = [];
+      const profiles: Record<string, UserProfile> = {};
+
+      // First, get all patient profiles
       for (const d of snap.docs) {
         const patientId = (d.data() as any).patientId;
+        if (!patientId) continue;
+        
         const psnap = await getDoc(doc(firestore, 'users', patientId));
         if (!psnap.exists()) continue;
+        
         const profile = psnap.data() as UserProfile;
-        const defaultSummary = { profile, vitals: null };
-        summaries.push(defaultSummary);
+        profiles[patientId] = profile;
+        patientIds.push(patientId);
+        
+        // Initialize with null vitals
+        setPatientSummaries((prev) => {
+          const existing = prev.find(p => p.profile.uid === patientId);
+          if (existing) return prev;
+          return [...prev, { profile, vitals: null }];
+        });
 
+        // Subscribe to real-time vitals updates for this patient
         const unsubVitals = subscribeToLatestVitals(patientId, (sample) => {
+          console.log(`[DOCTOR DASHBOARD] Received vitals for patient ${patientId}:`, sample?.hr, sample?.timestamp);
           setPatientSummaries((prev) => {
             const other = prev.filter((p) => p.profile.uid !== patientId);
-            return [...other, { profile, vitals: sample }];
+            return [...other, { profile, vitals: sample }].sort((a, b) => 
+              a.profile.name.localeCompare(b.profile.name)
+            );
           });
         });
         patientUnsubs.current[patientId] = unsubVitals;
       }
-      setPatientSummaries(summaries);
-      setPatientCount(summaries.length);
+
+      // Remove patients that are no longer linked
+      setPatientSummaries((prev) => 
+        prev.filter(p => patientIds.includes(p.profile.uid))
+      );
+      setPatientCount(patientIds.length);
     });
+    
     return () => {
       unsub();
       Object.values(patientUnsubs.current).forEach((u) => u && u());
@@ -337,33 +398,77 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
       <View style={styles.cardRow}>
         <TouchableOpacity style={[styles.statCard, styles.card]} onPress={() => navigation.navigate('DoctorPatients')}>
+          <View style={styles.statIconCircle}>
+            <Text style={styles.statIcon}>👥</Text>
+          </View>
           <Text style={styles.cardLabel}>Patients</Text>
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
-        <View style={[styles.statCardAlt, styles.card]}>
-          <Text style={styles.cardLabel}>Upcoming Appointments</Text>
+        <TouchableOpacity style={[styles.statCardUpcoming, styles.card]} onPress={() => navigation.navigate('DoctorAppointments')}>
+          <View style={[styles.statIconCircle, styles.statIconCircleUpcoming]}>
+            <Text style={styles.statIcon}>📅</Text>
+          </View>
+          <Text style={styles.cardLabel}>Upcoming</Text>
           <Text style={styles.cardValue}>{upcoming.length}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.cardFull, styles.cardAppointments]}>
-        <Text style={styles.cardTitle}>Next Appointments</Text>
+        <View style={styles.appointmentHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Next Appointments</Text>
+            <Text style={styles.cardSubtitle}>Your upcoming consultations</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.createAppointmentButton}
+            onPress={() => navigation.navigate('DoctorCreateAppointment')}
+          >
+            <Text style={styles.createAppointmentIcon}>➕</Text>
+          </TouchableOpacity>
+        </View>
         {nextAppointments.length === 0 ? (
-          <Text style={styles.cardCopy}>No upcoming appointments.</Text>
+          <View style={styles.emptyAppointment}>
+            <Text style={styles.emptyAppointmentIcon}>📅</Text>
+            <Text style={styles.emptyAppointmentText}>No upcoming appointments</Text>
+            <Text style={styles.emptyAppointmentHint}>Create new appointments to manage your schedule</Text>
+          </View>
         ) : (
-          nextAppointments.map((a) => (
-            <View key={a.id} style={styles.apptRow}>
-              <Text style={styles.apptTime}>
-                {format(
-                  new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt),
-                  'MMM d, HH:mm',
-                )}
-              </Text>
-              <Text style={styles.apptReason}>{a.reason || 'Consultation'}</Text>
-            </View>
-          ))
+          <>
+            {nextAppointments.map((a, index) => {
+              const appointmentDate = new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt);
+              const patientName = patientProfiles[a.patientId]?.name || 'Patient';
+              return (
+                <TouchableOpacity 
+                  key={a.id} 
+                  style={[styles.appointmentCard, index === nextAppointments.length - 1 && styles.appointmentCardLast]}
+                  onPress={() => navigation.navigate('DoctorAppointmentDetail', { appointmentId: a.id! })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.appointmentDateBadge}>
+                    <Text style={styles.appointmentMonth}>{format(appointmentDate, 'MMM')}</Text>
+                    <Text style={styles.appointmentDay}>{format(appointmentDate, 'd')}</Text>
+                  </View>
+                  <View style={styles.appointmentDetails}>
+                    <Text style={styles.appointmentPatient}>{patientName}</Text>
+                    <Text style={styles.appointmentReason}>{a.reason || 'Consultation'}</Text>
+                    <Text style={styles.appointmentTime}>🕐 {format(appointmentDate, 'HH:mm')}</Text>
+                  </View>
+                  <View style={styles.appointmentAction}>
+                    <Text style={styles.appointmentActionIcon}>→</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </>
         )}
-        <Button title="View All Appointments" variant="outline" onPress={() => navigation.navigate('DoctorAppointments')} />
+        <TouchableOpacity 
+          style={styles.viewAllButtonCompact}
+          onPress={() => navigation.navigate('DoctorAppointments')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.viewAllButtonText}>View All</Text>
+          <Text style={styles.viewAllButtonArrow}>→</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.cardFull, styles.cardPatientsVitals]}>
@@ -383,7 +488,35 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              renderItem={({ item: page }) => (
+              renderItem={({ item: page }) => {
+                // Sort page to show high/medium risk first, then normal
+                const sortedPage = [...page].sort((a, b) => {
+                  const getRiskScore = (patient: typeof a) => {
+                    if (!patient.vitals) return -1;
+                    let score = 0;
+                    
+                    // High risk conditions
+                    if (patient.vitals.arrhythmia_alert) score += 10;
+                    if (patient.vitals.anemia_alert) score += 10;
+                    if (patient.vitals.preeclampsia_alert) score += 10;
+                    if (patient.vitals.anemia_risk === 'Critical' || patient.vitals.anemia_risk === 'High') score += 8;
+                    if (patient.vitals.preeclampsia_risk === 'Critical' || patient.vitals.preeclampsia_risk === 'High') score += 8;
+                    
+                    // Medium risk conditions
+                    if (patient.vitals.anemia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.preeclampsia_risk === 'Moderate') score += 4;
+                    if (patient.vitals.rhythm && patient.vitals.rhythm !== 'Normal') score += 3;
+                    
+                    return score;
+                  };
+                  
+                  return getRiskScore(b) - getRiskScore(a);
+                });
+                
+                // Take top 3 patients
+                const displayPatients = sortedPage.slice(0, 3);
+                
+                return (
                 <View style={styles.tablePage}>
                   <View style={styles.tableHeader}>
                     <View style={styles.cellName}>
@@ -402,39 +535,71 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                       <Text style={styles.headerCell}>Status</Text>
                     </View>
                   </View>
-                  {page.map((p, idx) => {
-                    // Check all conditions from vitals data
-                    const conditions: string[] = [];
+                  {displayPatients.map((p, idx) => {
+                    // Check all conditions from vitals data with severity levels
+                    let statusText = 'Normal';
+                    let statusColor = colors.healthy;
+                    let severity = 0; // 0=normal, 1=medium, 2=high
                     
-                    if (p.vitals) {
-                      // Check Arrhythmia
+                    if (!p.vitals) {
+                      statusText = 'No Data';
+                      statusColor = colors.muted;
+                    } else {
+                      const highConditions: string[] = [];
+                      const mediumConditions: string[] = [];
+                      
+                      // High severity checks
                       if (p.vitals.arrhythmia_alert) {
-                        conditions.push('Arrhythmia');
-                      } else if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal') {
-                        conditions.push(p.vitals.rhythm);
+                        highConditions.push('Arrhythmia');
                       }
-                      
-                      // Check Anemia
                       if (p.vitals.anemia_alert) {
-                        conditions.push('Anemia');
-                      } else if (p.vitals.anemia_risk && p.vitals.anemia_risk !== 'Low') {
-                        conditions.push(`${p.vitals.anemia_risk} Anemia`);
+                        highConditions.push('Anemia');
+                      }
+                      if (p.vitals.preeclampsia_alert) {
+                        highConditions.push('Preeclampsia');
+                      }
+                      if (p.vitals.anemia_risk === 'Critical' || p.vitals.anemia_risk === 'High') {
+                        highConditions.push(`${p.vitals.anemia_risk} Anemia`);
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Critical' || p.vitals.preeclampsia_risk === 'High') {
+                        highConditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
                       }
                       
-                      // Check Preeclampsia
-                      if (p.vitals.preeclampsia_alert) {
-                        conditions.push('Preeclampsia');
-                      } else if (p.vitals.preeclampsia_risk && p.vitals.preeclampsia_risk !== 'Low') {
-                        conditions.push(`${p.vitals.preeclampsia_risk} Preeclampsia`);
+                      // Medium severity checks
+                      if (p.vitals.anemia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Anemia');
+                      }
+                      if (p.vitals.preeclampsia_risk === 'Moderate') {
+                        mediumConditions.push('Moderate Preeclampsia');
+                      }
+                      if (p.vitals.rhythm && p.vitals.rhythm !== 'Normal' && !p.vitals.arrhythmia_alert) {
+                        mediumConditions.push(p.vitals.rhythm);
+                      }
+                      
+                      // Determine status priority: High > Medium > Normal
+                      if (highConditions.length > 0) {
+                        statusText = highConditions[0];
+                        statusColor = colors.critical; // Red
+                        severity = 2;
+                      } else if (mediumConditions.length > 0) {
+                        statusText = mediumConditions[0];
+                        statusColor = colors.attention; // Orange
+                        severity = 1;
                       }
                     }
                     
-                    // Determine status - if any critical condition exists, show it; otherwise Normal
-                    const statusText = !p.vitals ? 'No Data' : conditions.length > 0 ? conditions[0] : 'Normal';
-                    const statusColor = !p.vitals ? colors.muted : conditions.length > 0 ? colors.critical : colors.healthy;
+                    // Determine row background color based on severity
+                    let rowBackgroundColor = '#F1F8F4'; // Light green for normal
+                    if (!p.vitals) {
+                      rowBackgroundColor = '#F5F5F5'; // Light gray for no data
+                    } else if (severity === 2) {
+                      rowBackgroundColor = '#FFEBEE'; // Light red for high risk
+                    } else if (severity === 1) {
+                      rowBackgroundColor = '#FFF4E5'; // Light orange for medium risk
+                    }
                     
                     return (
-                    <View key={p.profile.uid} style={[styles.tableRow, idx === page.length - 1 && styles.tableRowLast]}>
+                    <View key={p.profile.uid} style={[styles.tableRow, idx === displayPatients.length - 1 && styles.tableRowLast, { backgroundColor: rowBackgroundColor }]}>
                       <View style={styles.cellName}>
                         <Text style={styles.patientName} numberOfLines={1}>{p.profile.name}</Text>
                         <Text style={styles.patientMeta} numberOfLines={1}>
@@ -466,7 +631,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
                     </View>
                   )})}
                 </View>
-              )}
+              )}}
             />
             {patientPages.length > 1 && (
               <View style={styles.paginationHint}>
@@ -475,12 +640,14 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             )}
           </View>
         )}
-        <Button
-          title="View All Patients"
-          variant="outline"
+        <TouchableOpacity
+          style={styles.viewAllButtonCompact}
           onPress={() => navigation.navigate('DoctorPatients')}
-          style={styles.buttonSpace}
-        />
+          activeOpacity={0.7}
+        >
+          <Text style={styles.viewAllButtonText}>View All</Text>
+          <Text style={styles.viewAllButtonArrow}>→</Text>
+        </TouchableOpacity>
       </View>
 
     </ScreenContainer>
@@ -499,11 +666,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0D7377',
+    backgroundColor: colors.secondary,
     padding: spacing.lg,
     borderRadius: radii.lg,
     marginHorizontal: spacing.md,
     marginBottom: spacing.md,
+    shadowColor: colors.secondary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   heroTextBlock: {
     flex: 1,
@@ -516,11 +688,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   heroSubtitle: {
-    color: '#E0E4FF',
+    color: '#FDF0F0',
     marginBottom: spacing.xs,
   },
   heroCaption: {
-    color: '#CBD0FF',
+    color: '#FFE5E5',
     fontSize: typography.small,
   },
   heroBadge: {
@@ -584,29 +756,36 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.8 }],
   },
   alertCard: {
-    backgroundColor: '#FFF4F3',
-    borderWidth: 1,
-    borderColor: 'rgba(211, 47, 47, 0.12)',
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: 'rgba(211, 47, 47, 0.2)',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.critical,
   },
   alertHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   alertBadge: {
-    minWidth: 28,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-    backgroundColor: colors.primary,
+    minWidth: 32,
+    height: 32,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.lg,
+    backgroundColor: colors.critical,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.critical,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   alertBadgeText: {
     color: colors.white,
-    fontWeight: '700',
-    fontSize: typography.small,
+    fontWeight: '800',
+    fontSize: typography.body,
   },
   alertRow: {
     flexDirection: 'row',
@@ -647,9 +826,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   contactCard: {
-    backgroundColor: '#EEF0FF',
-    borderWidth: 1,
-    borderColor: 'rgba(40, 53, 147, 0.12)',
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: 'rgba(77, 182, 172, 0.2)',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
   },
   contactRow: {
     flexDirection: 'row',
@@ -676,21 +857,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   contactButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.secondary,
+    borderWidth: 2,
+    borderColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   contactButtonAccent: {
-    borderColor: colors.primary,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   contactButtonIcon: {
-    fontSize: 16,
+    fontSize: 18,
   },
   rowLast: {
     borderBottomWidth: 0,
@@ -719,17 +906,65 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: '#FDECEE',
+    alignItems: 'center',
+  },
+  statCardUpcoming: {
+    backgroundColor: '#E8F5F3',
+    alignItems: 'center',
   },
   statCardAlt: {
     backgroundColor: '#EFE9FF',
+    alignItems: 'center',
+  },
+  statIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(229, 115, 115, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  statIconCircleUpcoming: {
+    backgroundColor: 'rgba(77, 182, 172, 0.25)',
+  },
+  statIconCircleAlt: {
+    backgroundColor: 'rgba(40, 53, 147, 0.15)',
+  },
+  statIcon: {
+    fontSize: 24,
   },
   cardLabel: {
     color: colors.textSecondary,
+    fontSize: typography.small,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardLabelWhite: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: typography.small,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   cardValue: {
-    fontSize: typography.heading,
+    fontSize: typography.heading + 8,
     fontWeight: '800',
     color: colors.textPrimary,
+    marginTop: spacing.xs,
+  },
+  cardValueWhite: {
+    fontSize: typography.heading + 8,
+    fontWeight: '900',
+    color: colors.white,
+    marginTop: spacing.xs,
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   cardFull: {
     backgroundColor: colors.card,
@@ -749,15 +984,160 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     color: colors.textPrimary,
   },
+  cardSubtitle: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   cardCopy: {
     color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
   cardAppointments: {
-    backgroundColor: '#E8F7F4',
+    backgroundColor: colors.white,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  createAppointmentButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createAppointmentIcon: {
+    fontSize: 18,
+    color: colors.white,
+  },
+  emptyAppointment: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  emptyAppointmentIcon: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  emptyAppointmentText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  emptyAppointmentHint: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  appointmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FFFE',
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 182, 172, 0.2)',
+  },
+  appointmentCardLast: {
+    marginBottom: spacing.md,
+  },
+  appointmentDateBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.md,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  appointmentMonth: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.white,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  appointmentDay: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.white,
+    lineHeight: 22,
+  },
+  appointmentDetails: {
+    flex: 1,
+  },
+  appointmentPatient: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  appointmentReason: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  appointmentTime: {
+    fontSize: typography.small,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  appointmentAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(77, 182, 172, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appointmentActionIcon: {
+    fontSize: 16,
+    color: colors.accent,
+    fontWeight: 'bold',
+  },
+  viewAllButton: {
+    marginTop: spacing.xs,
+  },
+  viewAllButtonCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'flex-end',
+    backgroundColor: colors.secondary,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    marginTop: spacing.md,
+    minWidth: 100,
+  },
+  viewAllButtonText: {
+    fontSize: typography.small + 1,
+    fontWeight: '700',
+    color: colors.white,
+    marginRight: spacing.xs,
+  },
+  viewAllButtonArrow: {
+    fontSize: 16,
+    color: colors.white,
+    fontWeight: 'bold',
   },
   cardPatientsVitals: {
-    backgroundColor: '#FFF9E6',
+    backgroundColor: colors.white,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
   },
   emptyState: {
     alignItems: 'center',
@@ -782,7 +1162,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   tablePage: {
-    width: 500,
+    width: 520,
   },
   apptRow: {
     flexDirection: 'row',
@@ -809,11 +1189,11 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 2,
-    borderBottomColor: '#FFC107',
-    backgroundColor: '#FFFBF0',
+    borderBottomColor: colors.primary,
+    backgroundColor: 'rgba(229, 115, 115, 0.08)',
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
   },
@@ -821,9 +1201,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 193, 7, 0.2)',
+    borderBottomColor: 'rgba(229, 115, 115, 0.1)',
     backgroundColor: colors.white,
   },
   tableRowLast: {
@@ -833,36 +1213,36 @@ const styles = StyleSheet.create({
   },
   headerCell: {
     fontWeight: '700',
-    fontSize: typography.small,
+    fontSize: typography.small - 1,
     color: colors.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   cellName: {
-    flex: 2,
-    marginRight: spacing.md,
+    flex: 0.6,
+    paddingRight: spacing.xs,
   },
   cellVital: {
-    flex: 1.2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cellStatus: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cellStatus: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cellValue: {
-    fontSize: typography.body,
-    fontWeight: '600',
+    fontSize: typography.small,
+    fontWeight: '700',
     color: colors.textPrimary,
     textAlign: 'center',
   },
   cellUnit: {
-    fontSize: 10,
+    fontSize: 9,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 1,
   },
   statusBadge: {
     paddingVertical: 4,
@@ -878,12 +1258,12 @@ const styles = StyleSheet.create({
   },
   patientName: {
     fontWeight: '700',
-    fontSize: typography.body,
+    fontSize: typography.small,
     color: colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   patientMeta: {
-    fontSize: typography.small,
+    fontSize: 11,
     color: colors.textSecondary,
   },
   paginationHint: {
