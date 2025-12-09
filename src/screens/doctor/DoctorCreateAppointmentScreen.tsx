@@ -66,7 +66,9 @@ const DoctorCreateAppointmentScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScreenContainer scrollable>
-      <Text style={styles.title}>New Appointment</Text>
+      <View style={styles.header}>
+        <Text style={styles.subtitle}>Schedule a new consultation</Text>
+      </View>
       <Text style={styles.label}>Select Patient</Text>
       <FlatList
         data={patients}
@@ -138,6 +140,16 @@ const DoctorCreateAppointmentScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  header: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  subtitle: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
   title: {
     fontSize: typography.heading + 2,
     fontWeight: '800',
@@ -151,7 +163,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: spacing.sm,
     marginTop: spacing.md,
-    fontSize: typography.body,
+    fontSize: typography.small + 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   patientRow: {
     paddingHorizontal: spacing.lg,
@@ -159,11 +173,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   patientChip: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
     backgroundColor: '#F8F9FA',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#E9ECEF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -175,17 +189,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     borderColor: colors.secondary,
     shadowColor: colors.secondary,
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 3,
   },
   patientText: {
     color: colors.textPrimary,
-    fontWeight: '700',
-    fontSize: typography.body,
+    fontWeight: '600',
+    fontSize: typography.small + 1,
   },
   patientTextActive: {
     color: colors.white,
+    fontWeight: '700',
   },
   inputButton: {
     borderWidth: 2,
@@ -212,7 +227,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.md + 2,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl + spacing.lg,
     color: colors.textPrimary,
     fontSize: typography.body,
     backgroundColor: colors.white,
@@ -221,6 +236,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    minHeight: 100,
+    textAlignVertical: 'top',
   },
   meta: {
     color: colors.textSecondary,

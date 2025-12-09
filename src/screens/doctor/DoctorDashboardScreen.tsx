@@ -81,6 +81,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   const [upcoming, setUpcoming] = useState<Appointment[]>([]);
   const [nextAppointments, setNextAppointments] = useState<Appointment[]>([]);
   const [patientSummaries, setPatientSummaries] = useState<PatientSummaryEntry[]>([]);
+  const [patientProfiles, setPatientProfiles] = useState<Record<string, UserProfile>>({});
   const patientUnsubs = useRef<Record<string, () => void>>({});
 
   const patientPages = useMemo(() => {
@@ -222,7 +223,7 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
 
   useEffect(() => {
     if (!uid) return;
-    const unsub = subscribeDoctorAppointments(uid, (appts) => {
+    const unsub = subscribeDoctorAppointments(uid, async (appts) => {
       const now = new Date();
       const upcoming = appts.filter((a) => a.status === 'upcoming' && new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt) >= now);
       setUpcoming(upcoming);
@@ -232,6 +233,22 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           new Date((b.scheduledAt as any).toDate ? (b.scheduledAt as any).toDate() : b.scheduledAt).getTime(),
       );
       setNextAppointments(sorted.slice(0, 3));
+      
+      // Load patient profiles for appointments
+      const profiles: Record<string, UserProfile> = {};
+      for (const appt of sorted.slice(0, 3)) {
+        if (appt.patientId && !profiles[appt.patientId]) {
+          try {
+            const psnap = await getDoc(doc(firestore, 'users', appt.patientId));
+            if (psnap.exists()) {
+              profiles[appt.patientId] = psnap.data() as UserProfile;
+            }
+          } catch (e) {
+            console.error('Error loading patient profile:', e);
+          }
+        }
+      }
+      setPatientProfiles(profiles);
     });
     return () => unsub();
   }, [uid]);
@@ -387,8 +404,8 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <Text style={styles.cardLabel}>Patients</Text>
           <Text style={styles.cardValue}>{patientCount}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.statCardAlt, styles.card]} onPress={() => navigation.navigate('DoctorAppointments')}>
-          <View style={[styles.statIconCircle, styles.statIconCircleAlt]}>
+        <TouchableOpacity style={[styles.statCardUpcoming, styles.card]} onPress={() => navigation.navigate('DoctorAppointments')}>
+          <View style={[styles.statIconCircle, styles.statIconCircleUpcoming]}>
             <Text style={styles.statIcon}>📅</Text>
           </View>
           <Text style={styles.cardLabel}>Upcoming</Text>
@@ -419,31 +436,39 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           <>
             {nextAppointments.map((a, index) => {
               const appointmentDate = new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt);
+              const patientName = patientProfiles[a.patientId]?.name || 'Patient';
               return (
-                <View key={a.id} style={[styles.appointmentCard, index === nextAppointments.length - 1 && styles.appointmentCardLast]}>
+                <TouchableOpacity 
+                  key={a.id} 
+                  style={[styles.appointmentCard, index === nextAppointments.length - 1 && styles.appointmentCardLast]}
+                  onPress={() => navigation.navigate('DoctorAppointmentDetail', { appointmentId: a.id! })}
+                  activeOpacity={0.7}
+                >
                   <View style={styles.appointmentDateBadge}>
                     <Text style={styles.appointmentMonth}>{format(appointmentDate, 'MMM')}</Text>
                     <Text style={styles.appointmentDay}>{format(appointmentDate, 'd')}</Text>
                   </View>
                   <View style={styles.appointmentDetails}>
-                    <Text style={styles.appointmentPatient}>{a.patientId}</Text>
+                    <Text style={styles.appointmentPatient}>{patientName}</Text>
                     <Text style={styles.appointmentReason}>{a.reason || 'Consultation'}</Text>
                     <Text style={styles.appointmentTime}>🕐 {format(appointmentDate, 'HH:mm')}</Text>
                   </View>
-                  <TouchableOpacity style={styles.appointmentAction}>
+                  <View style={styles.appointmentAction}>
                     <Text style={styles.appointmentActionIcon}>→</Text>
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                </TouchableOpacity>
               );
             })}
           </>
         )}
-        <Button 
-          title="View All Appointments" 
-          variant="primary" 
+        <TouchableOpacity 
+          style={styles.viewAllButtonCompact}
           onPress={() => navigation.navigate('DoctorAppointments')}
-          style={styles.viewAllButton}
-        />
+          activeOpacity={0.7}
+        >
+          <Text style={styles.viewAllButtonText}>View All</Text>
+          <Text style={styles.viewAllButtonArrow}>→</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.cardFull, styles.cardPatientsVitals]}>
@@ -615,12 +640,14 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
             )}
           </View>
         )}
-        <Button
-          title="View All Patients"
-          variant="outline"
+        <TouchableOpacity
+          style={styles.viewAllButtonCompact}
           onPress={() => navigation.navigate('DoctorPatients')}
-          style={styles.buttonSpace}
-        />
+          activeOpacity={0.7}
+        >
+          <Text style={styles.viewAllButtonText}>View All</Text>
+          <Text style={styles.viewAllButtonArrow}>→</Text>
+        </TouchableOpacity>
       </View>
 
     </ScreenContainer>
@@ -881,6 +908,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDECEE',
     alignItems: 'center',
   },
+  statCardUpcoming: {
+    backgroundColor: '#E8F5F3',
+    alignItems: 'center',
+  },
   statCardAlt: {
     backgroundColor: '#EFE9FF',
     alignItems: 'center',
@@ -894,6 +925,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
+  statIconCircleUpcoming: {
+    backgroundColor: 'rgba(77, 182, 172, 0.25)',
+  },
   statIconCircleAlt: {
     backgroundColor: 'rgba(40, 53, 147, 0.15)',
   },
@@ -904,12 +938,33 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.small,
     fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardLabelWhite: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: typography.small,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   cardValue: {
     fontSize: typography.heading + 8,
     fontWeight: '800',
     color: colors.textPrimary,
     marginTop: spacing.xs,
+  },
+  cardValueWhite: {
+    fontSize: typography.heading + 8,
+    fontWeight: '900',
+    color: colors.white,
+    marginTop: spacing.xs,
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   cardFull: {
     backgroundColor: colors.card,
@@ -1055,6 +1110,29 @@ const styles = StyleSheet.create({
   },
   viewAllButton: {
     marginTop: spacing.xs,
+  },
+  viewAllButtonCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'flex-end',
+    backgroundColor: colors.secondary,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    marginTop: spacing.md,
+    minWidth: 100,
+  },
+  viewAllButtonText: {
+    fontSize: typography.small + 1,
+    fontWeight: '700',
+    color: colors.white,
+    marginRight: spacing.xs,
+  },
+  viewAllButtonArrow: {
+    fontSize: 16,
+    color: colors.white,
+    fontWeight: 'bold',
   },
   cardPatientsVitals: {
     backgroundColor: colors.white,

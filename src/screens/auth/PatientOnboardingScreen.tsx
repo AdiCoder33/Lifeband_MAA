@@ -17,6 +17,7 @@ type Props = RootScreenProps<'PatientOnboarding'> & {
 const PatientOnboardingScreen: React.FC<Props> = ({ navigation, route, profile, onCompleted }) => {
   const preloadedProfile = profile || route.params?.profile || null;
   const [name, setName] = useState(preloadedProfile?.name || '');
+  const [phone, setPhone] = useState(preloadedProfile?.phone || '');
   const [age, setAge] = useState(preloadedProfile?.patientData?.age ? String(preloadedProfile.patientData.age) : '');
   const [dateChoice, setDateChoice] = useState<'lmp' | 'edd'>('lmp');
   const [lmpDate, setLmpDate] = useState(preloadedProfile?.patientData?.lmpDate || '');
@@ -26,12 +27,16 @@ const PatientOnboardingScreen: React.FC<Props> = ({ navigation, route, profile, 
 
   const handleSubmit = async () => {
     setError(null);
-    if (!name || !age) {
-      setError('Please fill out your name and age.');
+    if (!name || !age || !phone) {
+      setError('Please fill out your name, phone, and age.');
       return;
     }
     if (Number.isNaN(Number(age))) {
       setError('Please enter a valid age.');
+      return;
+    }
+    if (phone.length < 10) {
+      setError('Please enter a valid phone number (at least 10 digits).');
       return;
     }
     if (dateChoice === 'lmp' && !lmpDate) {
@@ -59,6 +64,7 @@ const PatientOnboardingScreen: React.FC<Props> = ({ navigation, route, profile, 
 
       await updateUserProfile(user.uid, {
         name: name.trim(),
+        phone: phone.trim(),
         onboardingCompleted: true,
         patientData,
       });
@@ -83,6 +89,13 @@ const PatientOnboardingScreen: React.FC<Props> = ({ navigation, route, profile, 
         <Text style={styles.subtitle}>Step 1 of 1 - Basic Details</Text>
 
         <TextInput label="Full Name" value={name} onChangeText={setName} placeholder="Your full name" />
+        <TextInput
+          label="Phone Number"
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          placeholder="1234567890"
+        />
         <TextInput
           label="Age"
           value={age}
