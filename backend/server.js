@@ -93,11 +93,10 @@ async function ocrBuffer(buf, mime = '') {
 
 async function summarizeWithMeditron(text) {
   const prompt = `
-You are Meditron, an obstetric assistant. Summarize the clinical findings from this report.
-- Output exactly 5 concise bullet points (<=18 words each).
-- Use ONLY the provided text; do not invent data.
-- Ignore phone numbers, emails, addresses, IDs, facility names, and boilerplate.
-- If no meaningful findings, say "No clear clinical findings in the provided text."
+You are Meditron, an obstetric assistant. From the report, write EXACTLY 5 short bullet points (<=18 words each).
+- Use ONLY clinical findings (diagnoses, vitals, labs, risks, treatments, follow-ups). Do NOT include hospital names, addresses, phones, emails, registration numbers, IDs, or boilerplate.
+- If the text lacks clinical findings, output: "- No clear clinical findings in the provided text."
+- Format strictly as "- point". No numbering, no extra text.
 - End with: "This is general information only. A pregnant woman must follow her doctor’s advice."
 
 Report text (truncated):
