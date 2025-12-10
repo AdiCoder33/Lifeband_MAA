@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { FirebaseOptions, getApps, initializeApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -76,6 +76,21 @@ const authInstance = initializeAuth(app, {
 
 const firestoreInstance = initializeFirestore(app, {
   experimentalForceLongPolling: true,
+  cacheSizeBytes: CACHE_SIZE_UNLIMITED, // Enable unlimited offline cache
+});
+
+// Enable offline persistence (this helps with intermittent connectivity)
+// Note: This is best-effort and will fail silently if already enabled
+enableIndexedDbPersistence(firestoreInstance, {
+  forceOwnership: false // Allow multiple tabs/instances
+}).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('[Firebase] Persistence failed: Multiple tabs open');
+  } else if (err.code === 'unimplemented') {
+    console.warn('[Firebase] Persistence not available in this browser');
+  } else {
+    console.warn('[Firebase] Persistence error:', err);
+  }
 });
 
 export const auth = authInstance;

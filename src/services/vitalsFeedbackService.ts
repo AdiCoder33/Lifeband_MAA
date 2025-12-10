@@ -18,6 +18,22 @@ import { VitalsFeedback } from '../types/vitalsFeedback';
 const feedbackCollectionRef = (userId: string) => collection(firestore, 'users', userId, 'vitals_feedback');
 const vitalsCollectionRef = (userId: string) => collection(firestore, 'users', userId, 'vitals');
 
+// Helper to remove undefined values from objects before saving to Firestore
+const removeUndefined = (obj: any): any => {
+  const cleaned: any = {};
+  Object.keys(obj).forEach(key => {
+    const value = obj[key];
+    if (value !== undefined) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        cleaned[key] = removeUndefined(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+  });
+  return cleaned;
+};
+
 type Stats = VitalsFeedback['stats'];
 
 const initialStats = (): Stats => ({
@@ -46,7 +62,8 @@ const finalizeStats = (stats: Stats): Stats | null => {
   if (stats.count === 0) return null;
   const count = stats.count || 1;
   const round = (n: number) => Math.round(n * 10) / 10;
-  return {
+  
+  const result: any = {
     hr_avg: round(stats.hr_avg / count),
     hr_min: stats.hr_min === Number.POSITIVE_INFINITY ? 0 : stats.hr_min,
     hr_max: stats.hr_max === Number.NEGATIVE_INFINITY ? 0 : stats.hr_max,
@@ -59,14 +76,32 @@ const finalizeStats = (stats: Stats): Stats | null => {
     spo2_avg: round(stats.spo2_avg / count),
     spo2_min: stats.spo2_min === Number.POSITIVE_INFINITY ? 0 : stats.spo2_min,
     spo2_max: stats.spo2_max === Number.NEGATIVE_INFINITY ? 0 : stats.spo2_max,
-    temp_avg: stats.temp_avg ? round((stats.temp_avg || 0) / count) : undefined,
-    temp_min: stats.temp_min === Number.POSITIVE_INFINITY ? undefined : stats.temp_min,
-    temp_max: stats.temp_max === Number.NEGATIVE_INFINITY ? undefined : stats.temp_max,
-    hrv_avg: stats.hrv_avg ? round((stats.hrv_avg || 0) / count) : undefined,
-    hrv_min: stats.hrv_min === Number.POSITIVE_INFINITY ? undefined : stats.hrv_min,
-    hrv_max: stats.hrv_max === Number.NEGATIVE_INFINITY ? undefined : stats.hrv_max,
     count,
   };
+  
+  // Only include temp values if they exist
+  if (stats.temp_avg && stats.temp_avg > 0) {
+    result.temp_avg = round(stats.temp_avg / count);
+  }
+  if (stats.temp_min !== Number.POSITIVE_INFINITY && stats.temp_min !== undefined) {
+    result.temp_min = stats.temp_min;
+  }
+  if (stats.temp_max !== Number.NEGATIVE_INFINITY && stats.temp_max !== undefined) {
+    result.temp_max = stats.temp_max;
+  }
+  
+  // Only include HRV values if they exist
+  if (stats.hrv_avg && stats.hrv_avg > 0) {
+    result.hrv_avg = round(stats.hrv_avg / count);
+  }
+  if (stats.hrv_min !== Number.POSITIVE_INFINITY && stats.hrv_min !== undefined) {
+    result.hrv_min = stats.hrv_min;
+  }
+  if (stats.hrv_max !== Number.NEGATIVE_INFINITY && stats.hrv_max !== undefined) {
+    result.hrv_max = stats.hrv_max;
+  }
+  
+  return result as Stats;
 };
 
 const computeRisk = (stats: Stats): VitalsFeedback['riskLevel'] => {
@@ -93,13 +128,21 @@ export const subscribeToLatestVitalsFeedback = (
   callback: (feedback: VitalsFeedback | null) => void,
 ) => {
   const q = query(feedbackCollectionRef(userId), orderBy('windowStart', 'desc'), limit(1));
-  return onSnapshot(q, (snap) => {
-    if (snap.empty) {
-      callback(null);
-      return;
+  return onSnapshot(
+    q, 
+    (snap) => {
+      if (snap.empty) {
+        callback(null);
+        return;
+      }
+      callback(snap.docs[0].data() as VitalsFeedback);
+    },
+    (error) => {
+      console.warn('[VitalsFeedback] Subscription error (possibly offline):', error?.message || error);
+      // Don't crash - just log the error and let the app continue
+      // The cached data will still be available
     }
-    callback(snap.docs[0].data() as VitalsFeedback);
-  });
+  );
 };
 
 export const generateAndSaveHourlyVitalsFeedback = async (userId: string): Promise<VitalsFeedback | null> => {
@@ -108,40 +151,86 @@ export const generateAndSaveHourlyVitalsFeedback = async (userId: string): Promi
 };
 
 export const generateFeedbackFromLatestHour = async (userId: string): Promise<VitalsFeedback | null> => {
-  const latestSnap = await getDocs(query(vitalsCollectionRef(userId), orderBy('timestamp', 'desc'), limit(1)));
-  if (latestSnap.empty) return await fetchLatestFeedback(userId);
-  const latest = latestSnap.docs[0].data() as VitalsSample;
-  const ts = latest.timestamp;
-  const isSeconds = ts < 2_000_000_000; // heuristic
-  const tsMs = isSeconds ? ts * 1000 : ts;
-  const bucketStartMs = Math.floor(tsMs / (60 * 60 * 1000)) * 60 * 60 * 1000;
-  const bucketEndMs = bucketStartMs + 60 * 60 * 1000;
-  return generateFeedbackForWindow(userId, bucketStartMs, bucketEndMs, isSeconds);
+  console.log('[VitalsFeedback] Generating feedback from latest hour for user:', userId);
+  
+  try {
+    const latestSnap = await getDocs(query(vitalsCollectionRef(userId), orderBy('timestamp', 'desc'), limit(1)));
+    
+    if (latestSnap.empty) {
+      console.log('[VitalsFeedback] No vitals found, fetching latest feedback from cache...');
+      return await fetchLatestFeedback(userId);
+    }
+    
+    const latest = latestSnap.docs[0].data() as VitalsSample;
+    const ts = latest.timestamp;
+    const isSeconds = ts < 2_000_000_000; // heuristic: if timestamp < year 2033, it's in seconds
+    const tsMs = isSeconds ? ts * 1000 : ts;
+    
+    // Calculate the current hour bucket
+    const bucketStartMs = Math.floor(tsMs / (60 * 60 * 1000)) * 60 * 60 * 1000;
+    const bucketEndMs = bucketStartMs + 60 * 60 * 1000;
+    
+    console.log('[VitalsFeedback] Latest vitals timestamp:', new Date(tsMs).toISOString());
+    console.log('[VitalsFeedback] Hour bucket:', new Date(bucketStartMs).toISOString(), 'to', new Date(bucketEndMs).toISOString());
+    
+    return generateFeedbackForWindow(userId, bucketStartMs, bucketEndMs, isSeconds);
+  } catch (error: any) {
+    // Handle offline errors gracefully
+    if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+      console.warn('[VitalsFeedback] Offline - attempting to use cached data');
+      try {
+        return await fetchLatestFeedback(userId);
+      } catch (cacheError) {
+        console.error('[VitalsFeedback] Failed to fetch cached feedback:', cacheError);
+        return null;
+      }
+    }
+    console.error('[VitalsFeedback] Error generating feedback:', error);
+    throw error;
+  }
 };
 
 const fetchWindowVitals = async (userId: string, windowStartMs: number, windowEndMs: number, isSeconds: boolean) => {
+  console.log('[VitalsFeedback] Fetching vitals for window:', new Date(windowStartMs).toISOString(), 'to', new Date(windowEndMs).toISOString());
+  
   const ranges = [
     { start: isSeconds ? windowStartMs / 1000 : windowStartMs, end: isSeconds ? windowEndMs / 1000 : windowEndMs },
     { start: windowStartMs, end: windowEndMs },
   ];
   const seen = new Set<string>();
   const docs: VitalsSample[] = [];
+  
   for (const r of ranges) {
-    const vitalsQuery = query(
-      vitalsCollectionRef(userId),
-      where('timestamp', '>=', r.start),
-      where('timestamp', '<', r.end),
-      orderBy('timestamp', 'desc'),
-    );
-    const snap = await getDocs(vitalsQuery);
-    snap.forEach((d) => {
-      if (!seen.has(d.id)) {
-        seen.add(d.id);
-        docs.push(d.data() as VitalsSample);
+    try {
+      console.log('[VitalsFeedback] Trying range:', r.start, 'to', r.end);
+      
+      const vitalsQuery = query(
+        vitalsCollectionRef(userId),
+        where('timestamp', '>=', r.start),
+        where('timestamp', '<', r.end),
+        orderBy('timestamp', 'desc'),
+      );
+      
+      const snap = await getDocs(vitalsQuery);
+      console.log('[VitalsFeedback] Found', snap.size, 'vitals in this range');
+      
+      snap.forEach((d) => {
+        if (!seen.has(d.id)) {
+          seen.add(d.id);
+          docs.push(d.data() as VitalsSample);
+        }
+      });
+      
+      if (docs.length > 0) {
+        console.log('[VitalsFeedback] Total unique vitals found:', docs.length);
+        break; // prefer first range with data
       }
-    });
-    if (docs.length > 0) break; // prefer first range with data
+    } catch (error: any) {
+      console.warn('[VitalsFeedback] Error fetching range:', error?.message || error);
+      // Continue to next range on error
+    }
   }
+  
   return docs;
 };
 
@@ -154,9 +243,17 @@ const generateFeedbackForWindow = async (
   const hourBucket = Math.floor(windowStartMs / (60 * 60 * 1000)) * 60 * 60 * 1000;
   const vitalsDocs = await fetchWindowVitals(userId, windowStartMs, windowEndMs, isSeconds);
 
+  console.log('[VitalsFeedback] Processing', vitalsDocs.length, 'vitals for feedback generation');
+
   if (vitalsDocs.length === 0) {
+    console.log('[VitalsFeedback] No vitals in current window, checking for cached feedback...');
     const fallback = await fetchLatestFeedback(userId);
-    if (fallback) return fallback;
+    if (fallback) {
+      console.log('[VitalsFeedback] Returning cached feedback from:', new Date(fallback.windowStart).toISOString());
+      return fallback;
+    }
+    
+    console.log('[VitalsFeedback] No cached feedback, creating empty feedback');
     const emptyStats: Stats = {
       hr_avg: 0,
       hr_min: 0,
@@ -180,17 +277,17 @@ const generateFeedbackForWindow = async (
     };
     const fallbackFeedback: VitalsFeedback = {
       windowStart: hourBucket,
-      windowEnd,
+      windowEnd: windowEndMs,
       stats: emptyStats,
       riskLevel: 'stable',
-      feedback: 'No new vitals in the last hour. Please sync your LifeBand.',
+      feedback: 'No new vitals in the last hour. Please sync your LifeBand to track your health.',
       modelVersion: 'heuristic',
       generatedAt: Date.now(),
     };
-    await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), {
+    await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), removeUndefined({
       ...fallbackFeedback,
       serverTimestamp: serverTimestamp(),
-    });
+    }));
     return fallbackFeedback;
   }
 
@@ -229,8 +326,11 @@ const generateFeedbackForWindow = async (
     }
   });
 
+  console.log('[VitalsFeedback] Computed raw stats:', stats);
+
   const finalized = finalizeStats(stats);
   if (!finalized) {
+    console.log('[VitalsFeedback] Stats finalization failed, using fallback');
     const fallback = await fetchLatestFeedback(userId);
     if (fallback) return fallback;
     const emptyStats: Stats = {
@@ -263,16 +363,18 @@ const generateFeedbackForWindow = async (
       modelVersion: 'heuristic',
       generatedAt: Date.now(),
     };
-    await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), { ...fb, serverTimestamp: serverTimestamp() });
+    await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), removeUndefined({ ...fb, serverTimestamp: serverTimestamp() }));
     return fb;
   }
 
   const risk = computeRisk(finalized);
   const feedbackText = buildHeuristicFeedback(finalized, risk);
 
+  console.log('[VitalsFeedback] Generated feedback - Risk:', risk, 'Stats:', finalized);
+
   const feedback: VitalsFeedback = {
     windowStart: hourBucket,
-    windowEnd,
+    windowEnd: windowEndMs,
     stats: finalized,
     riskLevel: risk,
     feedback: feedbackText,
@@ -280,10 +382,17 @@ const generateFeedbackForWindow = async (
     generatedAt: Date.now(),
   };
 
-  await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), {
-    ...feedback,
-    serverTimestamp: serverTimestamp(),
-  });
+  console.log('[VitalsFeedback] Saving feedback to Firestore...');
+  try {
+    await setDoc(doc(feedbackCollectionRef(userId), hourBucket.toString()), removeUndefined({
+      ...feedback,
+      serverTimestamp: serverTimestamp(),
+    }));
+    console.log('[VitalsFeedback] Feedback saved successfully');
+  } catch (saveError: any) {
+    console.warn('[VitalsFeedback] Failed to save feedback to Firestore (offline?):', saveError?.message);
+    // Return the feedback even if save fails (for offline mode)
+  }
 
   return feedback;
 };
