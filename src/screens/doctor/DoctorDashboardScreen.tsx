@@ -224,19 +224,50 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
   useEffect(() => {
     if (!uid) return;
     const unsub = subscribeDoctorAppointments(uid, async (appts) => {
-      const now = new Date();
-      const upcoming = appts.filter((a) => a.status === 'upcoming' && new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt) >= now);
-      setUpcoming(upcoming);
-      const sorted = [...upcoming].sort(
-        (a, b) =>
-          new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt).getTime() -
-          new Date((b.scheduledAt as any).toDate ? (b.scheduledAt as any).toDate() : b.scheduledAt).getTime(),
-      );
-      setNextAppointments(sorted.slice(0, 3));
+      const now = Date.now();
+      
+      // Filter and convert appointments properly
+      const upcomingFiltered = appts.filter((a) => {
+        if (a.status !== 'upcoming') return false;
+        
+        // Convert Timestamp to milliseconds
+        let appointmentTime: number;
+        if ((a.scheduledAt as any)?.toMillis) {
+          appointmentTime = (a.scheduledAt as any).toMillis();
+        } else if ((a.scheduledAt as any)?.toDate) {
+          appointmentTime = (a.scheduledAt as any).toDate().getTime();
+        } else if (a.scheduledAt instanceof Date) {
+          appointmentTime = a.scheduledAt.getTime();
+        } else {
+          appointmentTime = Number(a.scheduledAt);
+        }
+        
+        return appointmentTime >= now;
+      });
+      
+      setUpcoming(upcomingFiltered);
+      
+      // Sort by scheduled time (earliest first)
+      const sorted = [...upcomingFiltered].sort((a, b) => {
+        const getTime = (appt: Appointment) => {
+          if ((appt.scheduledAt as any)?.toMillis) {
+            return (appt.scheduledAt as any).toMillis();
+          } else if ((appt.scheduledAt as any)?.toDate) {
+            return (appt.scheduledAt as any).toDate().getTime();
+          } else if (appt.scheduledAt instanceof Date) {
+            return appt.scheduledAt.getTime();
+          }
+          return Number(appt.scheduledAt);
+        };
+        return getTime(a) - getTime(b);
+      });
+      
+      const nextThree = sorted.slice(0, 3);
+      setNextAppointments(nextThree);
       
       // Load patient profiles for appointments
       const profiles: Record<string, UserProfile> = {};
-      for (const appt of sorted.slice(0, 3)) {
+      for (const appt of nextThree) {
         if (appt.patientId && !profiles[appt.patientId]) {
           try {
             const psnap = await getDoc(doc(firestore, 'users', appt.patientId));
@@ -435,7 +466,16 @@ const DoctorDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         ) : (
           <>
             {nextAppointments.map((a, index) => {
-              const appointmentDate = new Date((a.scheduledAt as any).toDate ? (a.scheduledAt as any).toDate() : a.scheduledAt);
+              // Convert Timestamp to Date properly
+              let appointmentDate: Date;
+              if ((a.scheduledAt as any)?.toDate) {
+                appointmentDate = (a.scheduledAt as any).toDate();
+              } else if (a.scheduledAt instanceof Date) {
+                appointmentDate = a.scheduledAt;
+              } else {
+                appointmentDate = new Date(Number(a.scheduledAt));
+              }
+              
               const patientName = patientProfiles[a.patientId]?.name || 'Patient';
               return (
                 <TouchableOpacity 
