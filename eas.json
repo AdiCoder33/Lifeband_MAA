@@ -12,11 +12,47 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBnVfqk4JO4JFDezcxHheFc8yFyV78Sn3o",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "lifeband-maa-c8b7b.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "lifeband-maa-c8b7b",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "lifeband-maa-c8b7b.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "908304870782",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:908304870782:web:9b60327d2a7f421f74172f",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-DZBGPGTJ7E",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_MEDITRON_BASE_URL": "https://kyree-hagiologic-euclid.ngrok-free.dev",
+        "EXPO_PUBLIC_MEDITRON_API_KEY": "my-secret-key",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://erzclvbocqaofqgzoesf.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyemNsdmJvY3Fhb2ZxZ3pvZXNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMjUyODEsImV4cCI6MjA4MDcwMTI4MX0.vpb53E1HQdH6NBntGU-hJRPlyR5m3oMuGrqrXJ61tqo",
+        "EXPO_PUBLIC_VISION_API_KEY": "AIzaSyAjk1HRp2MDjfRWANBOlWQiyU4t51YjFwE",
+        "EXPO_PUBLIC_BACKEND_URL": "https://lifeband-maa.onrender.com"
+      }
     },
     "production-apk": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBnVfqk4JO4JFDezcxHheFc8yFyV78Sn3o",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "lifeband-maa-c8b7b.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "lifeband-maa-c8b7b",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "lifeband-maa-c8b7b.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "908304870782",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:908304870782:web:9b60327d2a7f421f74172f",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-DZBGPGTJ7E",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "908304870782-vdk8jr401hh9b8auggudp1v364fkofpr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_MEDITRON_BASE_URL": "https://kyree-hagiologic-euclid.ngrok-free.dev",
+        "EXPO_PUBLIC_MEDITRON_API_KEY": "my-secret-key",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://erzclvbocqaofqgzoesf.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyemNsdmJvY3Fhb2ZxZ3pvZXNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMjUyODEsImV4cCI6MjA4MDcwMTI4MX0.vpb53E1HQdH6NBntGU-hJRPlyR5m3oMuGrqrXJ61tqo",
+        "EXPO_PUBLIC_VISION_API_KEY": "AIzaSyAjk1HRp2MDjfRWANBOlWQiyU4t51YjFwE",
+        "EXPO_PUBLIC_BACKEND_URL": "https://lifeband-maa.onrender.com"
       }
     }
   },

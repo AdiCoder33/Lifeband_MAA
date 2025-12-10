@@ -184,6 +184,30 @@ npx expo run:android
 ### Account Shows "This Google account already exists"
 **Expected behavior:** The app detects existing accounts and signs you in automatically instead of creating a duplicate.
 
+### ❌ Google Sign-In NOT Working in Production/Release Build
+**This is a common issue!** Your production build uses a different fingerprint.
+
+**Quick Fix:**
+1. Get your production SHA-1 fingerprint:
+   ```powershell
+   keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android
+   ```
+   
+2. **Your fingerprints are:**
+   - **SHA-1:** `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
+   - **SHA-256:** `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`
+
+3. Add BOTH fingerprints to Firebase Console (Settings → Project Settings → Your apps → Add fingerprint)
+4. Download updated `google-services.json` and replace `android/app/google-services.json`
+5. Rebuild your app
+
+**Or run the automated fix script:**
+```powershell
+.\fix-google-signin.ps1
+```
+
+**See:** `FIREBASE_FINGERPRINTS.md` and `PRODUCTION_GOOGLE_SIGNIN_FIX.md` for detailed instructions.
+
 ---
 
 ## 📱 Platform-Specific Notes
@@ -191,7 +215,8 @@ npx expo run:android
 ### Android:
 - SHA-1 fingerprint is **required**
 - Different fingerprints for debug and release builds
-- Release build requires keystore SHA-1
+- **IMPORTANT:** Your release build currently uses the debug keystore, so you need the debug keystore's SHA-1 in Firebase
+- For true production, create a separate release keystore (see `PRODUCTION_GOOGLE_SIGNIN_FIX.md`)
 
 ### iOS:
 - Requires iOS Client ID from Firebase
