@@ -1,11 +1,4 @@
-// Simple HTTP endpoint to OCR a report file, summarize with Meditron, and save to Firestore.
-// Intended to be deployable on Render/Cloud Run/VM.
-// Environment variables required:
-//   PORT (optional, default 4000)
-//   GOOGLE_APPLICATION_CREDENTIALS (path to Firebase service account JSON)
-//   MEDITRON_URL (e.g., https://bad4c252f1f9.ngrok-free.app)
-//   MEDITRON_KEY (Bearer token)
-
+// HTTP service: download report file, extract text (OCR/PDF), summarize with Meditron, save to Firestore.
 import 'dotenv/config';
 import fs from 'fs';
 import express from 'express';
@@ -14,20 +7,22 @@ import pdfParse from 'pdf-parse';
 import { createWorker } from 'tesseract.js';
 import admin from 'firebase-admin';
 
+// -----------------------------------------------------------------------------
+// Env + credentials
+// -----------------------------------------------------------------------------
 const { MEDITRON_URL, MEDITRON_KEY } = process.env;
 if (!MEDITRON_URL || !MEDITRON_KEY) {
   console.error('Missing MEDITRON_URL or MEDITRON_KEY');
   process.exit(1);
 }
 
-// Support either a path to the service account JSON or the raw JSON in env
 const rawCred =
   process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
   process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON_B64 ||
   process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
 if (!rawCred) {
-  console.error('Missing service account: set GOOGLE_APPLICATION_CREDENTIALS (path) or GOOGLE_APPLICATION_CREDENTIALS_JSON (JSON string)');
+  console.error('Missing service account: set GOOGLE_APPLICATION_CREDENTIALS (path) or GOOGLE_APPLICATION_CREDENTIALS_JSON / _JSON_B64');
   process.exit(1);
 }
 
@@ -42,7 +37,6 @@ try {
     const fileData = fs.readFileSync(rawCred, 'utf-8');
     credentialObj = JSON.parse(fileData);
   }
-  // Normalize private key newlines in case they arrived as \n literals
   if (credentialObj?.private_key) {
     credentialObj.private_key = credentialObj.private_key.replace(/\\n/g, '\n');
   }
@@ -57,6 +51,9 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
@@ -68,47 +65,77 @@ async function downloadBuffer(url) {
 }
 
 async function ocrBuffer(buf, mime = '') {
-  if (mime.toLowerCase().includes('pdf')) {
-    const parsed = await pdfParse(buf);
-    return parsed.text || '';
+  const isPdf =
+    mime.toLowerCase().includes('pdf') ||
+    buf.slice(0, 4).toString('utf8') === '%PDF';
+
+  if (isPdf) {
+    try {
+      const parsed = await pdfParse(buf);
+      return parsed.text || '';
+    } catch (err) {
+      console.warn('pdf-parse failed, falling back to Tesseract PDF image conversion', err.message);
+    }
   }
-  const worker = await createWorker('eng');
-  const { data: { text } } = await worker.recognize(buf);
-  await worker.terminate();
-  return text || '';
+
+  try {
+    const worker = await createWorker('eng');
+    const {
+      data: { text },
+    } = await worker.recognize(buf);
+    await worker.terminate();
+    return text || '';
+  } catch (err) {
+    console.error('Tesseract failed', err.message);
+    return '';
+  }
 }
 
 async function summarizeWithMeditron(text) {
   const prompt = `
-You are Meditron. Summarize the report into exactly 3 short bullet points.
-- Use ONLY the provided text. Do not invent.
-- Ignore phone numbers, emails, addresses.
-- If no clinical findings, say: "No clinical findings detected."
+You are Meditron, an obstetric assistant. Summarize the clinical findings from this report.
+- Output exactly 5 concise bullet points (<=18 words each).
+- Use ONLY the provided text; do not invent data.
+- Ignore phone numbers, emails, addresses, IDs, facility names, and boilerplate.
+- If no meaningful findings, say "No clear clinical findings in the provided text."
 - End with: "This is general information only. A pregnant woman must follow her doctor’s advice."
 
-Report text:
-${text.slice(0, 4000)}
+Report text (truncated):
+${text.slice(0, 3500)}
   `.trim();
 
   const resp = await fetch(`${MEDITRON_URL}/v1/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${MEDITRON_KEY}`,
+      Authorization: `Bearer ${MEDITRON_KEY}`,
     },
     body: JSON.stringify({
       model: 'meditron-7b',
       prompt,
-      max_tokens: 220,
-      temperature: 0.1,
+      max_tokens: 240,
+      temperature: 0.2,
       stop: ['Question:'],
     }),
   });
+
   if (!resp.ok) throw new Error(`Meditron failed: ${resp.status}`);
   const json = await resp.json();
-  return json?.choices?.[0]?.text?.trim() || 'No summary';
+  const txt = json?.choices?.[0]?.text?.trim() || '';
+  return txt;
 }
 
+function scrubText(raw = '') {
+  return raw
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '')
+    .replace(/\b(?:tel|phone|ph|mobile)[:\s]*\+?\d[\d\s().-]{6,}\b/gi, '')
+    .trim();
+}
+
+// -----------------------------------------------------------------------------
+// Route
+// -----------------------------------------------------------------------------
 app.post('/process', async (req, res) => {
   try {
     const { appointmentId, reportId, fileUrl, mimeType = 'image/jpeg' } = req.body || {};
@@ -117,11 +144,11 @@ app.post('/process', async (req, res) => {
     }
 
     const buf = await downloadBuffer(fileUrl);
-    const extractedText = await ocrBuffer(buf, mimeType);
+    const effMime = fileUrl.toLowerCase().endsWith('.pdf') ? 'application/pdf' : mimeType;
+    const extractedText = await ocrBuffer(buf, effMime);
 
-    // Guard: if OCR failed or too little text, skip Meditron and store a friendly message
-    const normalizedText = (extractedText || '').trim().replace(/\s+/g, ' ');
-    if (normalizedText.length < 30) {
+    const normalized = (extractedText || '').trim().replace(/\s+/g, ' ');
+    if (normalized.length < 30) {
       await db.doc(`appointments/${appointmentId}/reports/${reportId}`).set(
         {
           extractedText,
@@ -136,20 +163,13 @@ app.post('/process', async (req, res) => {
       return res.json({ ok: true, summary: 'No readable text detected in this report. Please upload a clearer image or PDF.' });
     }
 
-    const cleaned = normalizedText
-      .replace(/tel:?\s*\+?[0-9\- ]+/gi, '')
-      .replace(/\S+@\S+/g, '')
-      .replace(/\b\d{3,}\b/g, '')
-      .trim();
-
-    const summary = await summarizeWithMeditron(cleaned || normalizedText);
-
-    // Guard: if the model returns mostly punctuation/too short, fall back
-    const lettersOnly = (summary || '').replace(/[^a-zA-Z]/g, '');
+    const cleaned = scrubText(normalized);
+    const summaryRaw = await summarizeWithMeditron(cleaned || normalized);
+    const lettersOnly = (summaryRaw || '').replace(/[^a-zA-Z]/g, '');
     const finalSummary =
-      !lettersOnly || lettersOnly.length < 20
+      !lettersOnly || lettersOnly.length < 30
         ? 'The report text could not be summarized reliably. Please upload a clearer image or PDF.'
-        : summary;
+        : summaryRaw;
 
     await db.doc(`appointments/${appointmentId}/reports/${reportId}`).set(
       {
@@ -163,13 +183,16 @@ app.post('/process', async (req, res) => {
       { merge: true },
     );
 
-    res.json({ ok: true, summary });
+    res.json({ ok: true, summary: finalSummary });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || String(err) });
   }
 });
 
+// -----------------------------------------------------------------------------
+// Start
+// -----------------------------------------------------------------------------
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`OCR+Meditron server running on port ${port}`);
