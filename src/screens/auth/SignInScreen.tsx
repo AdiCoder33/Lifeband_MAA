@@ -10,6 +10,9 @@ import {
   Text,
   View,
   ViewStyle,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Svg, {
@@ -250,13 +253,25 @@ const SignInScreen: React.FC<Props> = ({ navigation }) => {
     <ScreenContainer style={styles.screen}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <View style={styles.wrapper}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <Animated.View
             style={[styles.content, { opacity: formOpacity, transform: [{ translateY: formTranslate }] }]}
           >
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backButtonText}>← Back</Text>
+            </TouchableOpacity>
+            
             <View style={styles.heroSection}>
               <View style={styles.logoContainer}>
                 <Image source={appLogo} style={styles.logo} resizeMode="contain" />
@@ -313,39 +328,57 @@ const SignInScreen: React.FC<Props> = ({ navigation }) => {
 
             <Text style={styles.helperText}>We keep every visit protected with medical-grade security.</Text>
           </Animated.View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
 };
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const IS_SMALL_DEVICE = SCREEN_WIDTH < 375;
+const HORIZONTAL_PADDING = IS_SMALL_DEVICE ? spacing.md : spacing.lg;
+
 const styles = StyleSheet.create({
   screen: {
-    paddingHorizontal: spacing.lg,
     backgroundColor: '#FFFFFF',
+    flex: 1,
   },
   keyboard: {
     flex: 1,
   },
-  wrapper: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+    paddingHorizontal: HORIZONTAL_PADDING,
     paddingVertical: spacing.xl,
+    minHeight: SCREEN_HEIGHT,
   },
   content: {
-    gap: spacing.lg,
+    gap: IS_SMALL_DEVICE ? spacing.md : spacing.lg,
     maxWidth: 420,
     width: '100%',
     alignSelf: 'center',
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  backButtonText: {
+    fontSize: typography.body,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
   heroSection: {
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
+    marginBottom: spacing.sm,
   },
   logoContainer: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+    width: IS_SMALL_DEVICE ? 64 : 74,
+    height: IS_SMALL_DEVICE ? 64 : 74,
+    borderRadius: IS_SMALL_DEVICE ? 32 : 37,
     backgroundColor: 'rgba(252, 225, 231, 0.65)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.88)',
@@ -362,20 +395,22 @@ const styles = StyleSheet.create({
     height: 44,
   },
   heroTitle: {
-    fontSize: typography.heading + 8,
+    fontSize: IS_SMALL_DEVICE ? typography.heading + 2 : typography.heading + 8,
     color: colors.secondary,
     fontWeight: '800',
     letterSpacing: 0.6,
+    textAlign: 'center',
   },
   heroSubtitle: {
     textAlign: 'center',
-    fontSize: typography.body,
+    fontSize: IS_SMALL_DEVICE ? typography.small : typography.body,
     color: 'rgba(64, 49, 90, 0.7)',
     lineHeight: 22,
+    paddingHorizontal: spacing.sm,
   },
   formWrapper: {
     marginTop: spacing.md,
-    gap: spacing.sm,
+    gap: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
   },
   formLabel: {
     color: 'rgba(64, 49, 90, 0.85)',
@@ -387,9 +422,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(245, 205, 218, 0.55)',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: IS_SMALL_DEVICE ? spacing.sm : spacing.md,
+    paddingHorizontal: IS_SMALL_DEVICE ? spacing.md : spacing.lg,
     backgroundColor: 'rgba(255, 255, 255, 0.99)',
+    fontSize: IS_SMALL_DEVICE ? typography.small : typography.body,
   },
   inputSurfaceFocused: {
     borderColor: colors.primary,
@@ -417,7 +453,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   buttonWrapper: {
-    marginTop: spacing.md,
+    marginTop: IS_SMALL_DEVICE ? spacing.sm : spacing.md,
     borderRadius: 18,
     width: '100%',
   },

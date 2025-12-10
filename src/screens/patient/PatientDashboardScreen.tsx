@@ -151,67 +151,94 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     reconnectIfKnownDevice();
   }, [reconnectIfKnownDevice]);
 
-  // Subscribe to latest vitals feedback
+  // Subscribe to latest vitals feedback from Firestore
   useEffect(() => {
     if (!uid) return;
-    const unsub = subscribeToLatestVitalsFeedback(uid, setVitalsFeedback);
+    const unsub = subscribeToLatestVitalsFeedback(uid, (feedback) => {
+      setVitalsFeedback(feedback);
+      if (feedback) {
+        setFeedbackLoading(false);
+        setFeedbackError(null);
+      }
+    });
     return () => unsub();
   }, [uid]);
 
-  // Stop spinner as soon as any feedback arrives from the subscription
+  // Generate initial feedback on mount and set up auto-refresh every 5 minutes
   useEffect(() => {
-    if (vitalsFeedback) {
-      setFeedbackLoading(false);
-      setFeedbackError(null);
-    }
-  }, [vitalsFeedback]);
-
-  // Generate feedback based on the latest hour that has data
-  useEffect(() => {
+    if (!uid) return;
+    
     let cancelled = false;
-    const maybeGenerate = async () => {
-      if (!uid) return;
-      if (feedbackLoading) return;
-      setFeedbackLoading(true);
+    
+    const generateFeedback = async () => {
+      if (cancelled) return;
+      
       try {
-        if (!cancelled) {
+        setFeedbackLoading(true);
+        setFeedbackError(null);
+        const res = await generateFeedbackFromLatestHour(uid);
+        
+        if (cancelled) return;
+        
+        if (!res) {
+          setFeedbackError('No vitals found in the latest hour.');
+        } else {
           setFeedbackError(null);
-          const res = await generateFeedbackFromLatestHour(uid);
-          if (!res) {
-            setFeedbackError('No vitals found in the latest hour.');
-          } else {
-            setVitalsFeedback(res);
-            setFeedbackError(null);
-          }
         }
       } catch (e: any) {
         if (!cancelled) {
-          setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+          // Check if it's an offline error
+          if (e?.code === 'unavailable' || e?.message?.includes('offline')) {
+            setFeedbackError('You appear to be offline. Using cached data.');
+          } else {
+            setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+          }
         }
       } finally {
-        if (!cancelled) setFeedbackLoading(false);
+        if (!cancelled) {
+          setFeedbackLoading(false);
+        }
       }
     };
-    maybeGenerate();
+
+    // Generate feedback immediately on mount
+    generateFeedback();
+
+    // Auto-refresh every 5 minutes to check for new hourly data
+    const intervalId = setInterval(() => {
+      console.log('[PatientDashboard] Auto-refreshing hourly vitals feedback...');
+      generateFeedback();
+    }, 5 * 60 * 1000); // 5 minutes
+
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
-  }, [uid, vitalsFeedback?.windowEnd, feedbackLoading]);
+  }, [uid]);
 
   const handleRefreshFeedback = useCallback(async () => {
     if (!uid || feedbackLoading) return;
+    
     setFeedbackLoading(true);
+    setFeedbackError(null);
+    
     try {
-      setFeedbackError(null);
+      console.log('[PatientDashboard] Manual refresh triggered...');
       const res = await generateFeedbackFromLatestHour(uid);
+      
       if (!res) {
-        setFeedbackError('No vitals found in the last hour.');
+        setFeedbackError('No vitals found in the last hour. Please sync your LifeBand.');
       } else {
-        setVitalsFeedback(res);
         setFeedbackError(null);
       }
     } catch (e: any) {
-      setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+      console.error('[PatientDashboard] Refresh error:', e);
+      // Check if it's an offline error
+      if (e?.code === 'unavailable' || e?.message?.includes('offline')) {
+        setFeedbackError('You appear to be offline. Please check your internet connection.');
+      } else {
+        setFeedbackError(e?.message || 'Unable to generate feedback right now.');
+      }
     } finally {
       setFeedbackLoading(false);
     }
@@ -534,7 +561,11 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         <View style={styles.cardHeader}>
           <View>
             <Text style={styles.cardTitle}>Hourly Vitals Feedback</Text>
-            <Text style={styles.cardSubtitle}>AI summary of your last hour</Text>
+            <Text style={styles.cardSubtitle}>
+              {vitalsFeedback?.windowStart 
+                ? `Based on vitals from ${format(new Date(vitalsFeedback.windowStart), 'HH:mm')} - ${format(new Date(vitalsFeedback.windowEnd || vitalsFeedback.windowStart + 3600000), 'HH:mm')}`
+                : 'AI summary of your last hour'}
+            </Text>
           </View>
           <View style={[styles.badge, styles[`badge_${vitalsFeedback?.riskLevel || 'stable'}`]]}>
             <Text style={styles.badgeText}>
@@ -544,11 +575,16 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
         </View>
         <Text style={styles.feedbackText}>
           {feedbackLoading && !vitalsFeedback
-            ? 'Generating feedback...'
+            ? 'Generating feedback from your vitals...'
             : feedbackError
             ? feedbackError
-            : vitalsFeedback?.feedback || 'Feedback will appear here after an hour of vitals.'}
+            : vitalsFeedback?.feedback || 'Feedback will appear here after vitals are synced.'}
         </Text>
+        {vitalsFeedback?.stats && vitalsFeedback.stats.count > 0 && (
+          <Text style={styles.feedbackMeta}>
+            Based on {vitalsFeedback.stats.count} reading{vitalsFeedback.stats.count !== 1 ? 's' : ''} • Updated {format(new Date(vitalsFeedback.generatedAt || Date.now()), 'HH:mm')}
+          </Text>
+        )}
         <TouchableOpacity style={styles.refreshBtn} onPress={handleRefreshFeedback} disabled={feedbackLoading}>
           <Text style={styles.refreshText}>{feedbackLoading ? 'Refreshing...' : 'Refresh feedback'}</Text>
         </TouchableOpacity>
@@ -946,6 +982,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     color: colors.textPrimary,
     lineHeight: 18,
+  },
+  feedbackMeta: {
+    marginTop: spacing.xs,
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   badge: {
     paddingHorizontal: spacing.sm,
