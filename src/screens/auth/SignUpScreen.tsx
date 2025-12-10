@@ -10,6 +10,9 @@ import {
   Text,
   View,
   ViewStyle,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Svg, {
@@ -244,9 +247,21 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScreenContainer style={styles.screen}>
-      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}>
-        <View style={styles.wrapper}>
+      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <Animated.View style={[styles.content, { opacity: formOpacity, transform: [{ translateY: formTranslate }] }]}>
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backButtonText}>← Back</Text>
+            </TouchableOpacity>
+            
             <View style={styles.heroSection}>
               <View style={styles.logoContainer}>
                 <Image source={appLogo} style={styles.logo} resizeMode="contain" />
@@ -306,11 +321,25 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
 
               <Text style={styles.label}>I am a</Text>
               <View style={styles.roleRow}>
-                <Pressable style={[styles.roleCard, role === 'patient' && styles.roleCardActive]} onPress={() => setRole('patient')}>
+                <Pressable 
+                  style={[styles.roleCard, role === 'patient' && styles.roleCardActive]} 
+                  onPress={() => setRole('patient')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.roleIconContainer}>
+                    <Text style={styles.roleIcon}>🤰</Text>
+                  </View>
                   <Text style={styles.roleTitle}>Pregnant Mother</Text>
                   <Text style={styles.roleSubtitle}>Maternal care journey</Text>
                 </Pressable>
-                <Pressable style={[styles.roleCard, role === 'doctor' && styles.roleCardActive]} onPress={() => setRole('doctor')}>
+                <Pressable 
+                  style={[styles.roleCard, role === 'doctor' && styles.roleCardActive]} 
+                  onPress={() => setRole('doctor')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.roleIconContainer}>
+                    <Text style={styles.roleIcon}>👨‍⚕️</Text>
+                  </View>
                   <Text style={styles.roleTitle}>Doctor</Text>
                   <Text style={styles.roleSubtitle}>Medical companion</Text>
                 </Pressable>
@@ -336,40 +365,57 @@ const SignUpScreen: React.FC<Props> = ({ navigation }) => {
 
             <Text style={styles.helperText}>We keep every visit protected with medical-grade security.</Text>
           </Animated.View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
 };
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const IS_SMALL_DEVICE = SCREEN_WIDTH < 375;
+const HORIZONTAL_PADDING = IS_SMALL_DEVICE ? spacing.sm : spacing.md;
+
 const styles = StyleSheet.create({
   screen: {
-    paddingHorizontal: spacing.md,
     backgroundColor: '#FFFFFF',
+    flex: 1,
   },
   keyboard: {
     flex: 1,
   },
-  wrapper: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingVertical: spacing.lg,
+    minHeight: SCREEN_HEIGHT,
   },
   content: {
-    gap: spacing.xs,
+    gap: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
     width: '100%',
     maxWidth: 420,
     alignSelf: 'center',
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  backButtonText: {
+    fontSize: typography.body,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
   heroSection: {
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
+    marginBottom: spacing.sm,
   },
   logoContainer: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+    width: IS_SMALL_DEVICE ? 64 : 74,
+    height: IS_SMALL_DEVICE ? 64 : 74,
+    borderRadius: IS_SMALL_DEVICE ? 32 : 37,
     backgroundColor: 'rgba(252, 225, 231, 0.65)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.88)',
@@ -386,20 +432,22 @@ const styles = StyleSheet.create({
     height: 44,
   },
   heroTitle: {
-    fontSize: typography.heading + 6,
+    fontSize: IS_SMALL_DEVICE ? typography.heading + 2 : typography.heading + 6,
     color: colors.secondary,
     fontWeight: '800',
     letterSpacing: 0.4,
+    textAlign: 'center',
   },
   heroSubtitle: {
     textAlign: 'center',
-    fontSize: typography.body,
+    fontSize: IS_SMALL_DEVICE ? typography.small : typography.body,
     color: 'rgba(64, 49, 90, 0.7)',
     lineHeight: 22,
+    paddingHorizontal: spacing.sm,
   },
   formWrapper: {
-    marginTop: spacing.xs,
-    gap: spacing.xs,
+    marginTop: spacing.sm,
+    gap: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
   },
   formLabel: {
     color: 'rgba(64, 49, 90, 0.85)',
@@ -411,9 +459,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(245, 205, 218, 0.55)',
-    paddingVertical: spacing.xs+5,
-    paddingHorizontal: spacing.md,
+    paddingVertical: IS_SMALL_DEVICE ? spacing.sm : spacing.sm + 2,
+    paddingHorizontal: IS_SMALL_DEVICE ? spacing.sm : spacing.md,
     backgroundColor: 'rgba(255, 255, 255, 0.99)',
+    fontSize: IS_SMALL_DEVICE ? typography.small : typography.body,
   },
 
   inputSurfaceFocused: {
@@ -433,30 +482,51 @@ const styles = StyleSheet.create({
   roleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs+2,
-    gap: spacing.xs,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
   },
   roleCard: {
     flex: 1,
-    padding: spacing.xs+1,
-    borderRadius: radii.md,
-    borderWidth: 1,
+    padding: IS_SMALL_DEVICE ? spacing.md : spacing.lg,
+    borderRadius: radii.lg,
+    borderWidth: 2,
     borderColor: 'rgba(230,230,230,0.9)',
     backgroundColor: '#FFFFFF',
-    marginRight: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: IS_SMALL_DEVICE ? 110 : 130,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   roleCardActive: {
     borderColor: colors.secondary,
     backgroundColor: '#EDF0FF',
+    shadowColor: colors.secondary,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  roleIconContainer: {
+    marginBottom: spacing.xs,
+  },
+  roleIcon: {
+    fontSize: IS_SMALL_DEVICE ? 32 : 40,
+    textAlign: 'center',
   },
   roleTitle: {
     color: colors.textPrimary,
     fontWeight: '700',
+    fontSize: IS_SMALL_DEVICE ? typography.small : typography.body,
     marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   roleSubtitle: {
     color: colors.textSecondary,
-    fontSize: typography.small,
+    fontSize: IS_SMALL_DEVICE ? typography.small - 1 : typography.small,
+    textAlign: 'center',
   },
   error: {
     color: colors.critical,
@@ -471,7 +541,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   buttonWrapper: {
-    marginTop: spacing.xs,
+    marginTop: IS_SMALL_DEVICE ? spacing.xs : spacing.sm,
     borderRadius: 18,
     width: '100%',
   },
