@@ -158,6 +158,14 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
     return () => unsub();
   }, [uid]);
 
+  // Stop spinner as soon as any feedback arrives from the subscription
+  useEffect(() => {
+    if (vitalsFeedback) {
+      setFeedbackLoading(false);
+      setFeedbackError(null);
+    }
+  }, [vitalsFeedback]);
+
   // Generate feedback based on the latest hour that has data
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +179,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
           const res = await generateFeedbackFromLatestHour(uid);
           if (!res) {
             setFeedbackError('No vitals found in the latest hour.');
+          } else {
+            setVitalsFeedback(res);
+            setFeedbackError(null);
           }
         }
       } catch (e: any) {
@@ -195,6 +206,9 @@ const PatientDashboardScreen: React.FC<Props> = ({ navigation, profile }) => {
       const res = await generateFeedbackFromLatestHour(uid);
       if (!res) {
         setFeedbackError('No vitals found in the last hour.');
+      } else {
+        setVitalsFeedback(res);
+        setFeedbackError(null);
       }
     } catch (e: any) {
       setFeedbackError(e?.message || 'Unable to generate feedback right now.');

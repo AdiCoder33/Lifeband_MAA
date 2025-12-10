@@ -1,0 +1,30 @@
+const buildPrompt = (stats: Stats, risk: VitalsFeedback['riskLevel']): string => {
+  const lines: string[] = [];
+  lines.push(
+    'You are Meditron. Give 3 short bullet points (max 14 words each) for a pregnant patient based ONLY on these vitals from the last hour.',
+  );
+  lines.push('Vitals (use words, avoid repeating numbers exactly):');
+  lines.push(`HR average ${stats.hr_avg}, min ${stats.hr_min}, max ${stats.hr_max}.`);
+  lines.push(
+    `BP average ${stats.bp_sys_avg}/${stats.bp_dia_avg}, min ${stats.bp_sys_min}/${stats.bp_dia_min}, max ${stats.bp_sys_max}/${stats.bp_dia_max}.`,
+  );
+  lines.push(`SpO2 average ${stats.spo2_avg} percent, min ${stats.spo2_min}, max ${stats.spo2_max}.`);
+  if (stats.temp_avg !== undefined) {
+    lines.push(
+      `Temp average ${stats.temp_avg} C, min ${stats.temp_min ?? stats.temp_avg}, max ${stats.temp_max ?? stats.temp_avg}.`,
+    );
+  }
+  if (stats.hrv_avg !== undefined) {
+    lines.push(
+      `HRV average ${stats.hrv_avg} ms, min ${stats.hrv_min ?? stats.hrv_avg}, max ${stats.hrv_max ?? stats.hrv_avg}.`,
+    );
+  }
+  lines.push(`Risk flag: ${risk}.`);
+  lines.push(
+    'Rules: reassure if stable; if BP high say rest and hydrate; if SpO2 under 95 say sit up and breathe, seek care if under 92; if HR very high or low say calm and recheck. No admin info.',
+  );
+  lines.push(
+    'Write exactly 3 bullet lines starting with "-". Each line =14 words. End with: "This is general information only. A pregnant woman must follow her doctor’s advice."',
+  );
+  return lines.join('\n');
+};
